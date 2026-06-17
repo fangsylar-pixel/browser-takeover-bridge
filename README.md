@@ -90,6 +90,14 @@ chrome.exe --remote-debugging-port=9222
 
 The extension bridge exists to cover the practical case where the user already has the page open in their normal logged-in browser.
 
+## Support
+
+Browser Takeover Bridge is open source and built for people experimenting with Codex, browser agents, and authenticated web workflows.
+
+If it helps you, optional support is welcome:
+
+[爱发电支持 / Support on Afdian](https://afdian.net/a/fangsylar)
+
 ## License
 
 MIT
