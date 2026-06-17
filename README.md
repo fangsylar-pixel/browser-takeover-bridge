@@ -96,7 +96,7 @@ Browser Takeover Bridge is open source and built for people experimenting with C
 
 If it helps you, optional support is welcome:
 
-[爱发电支持 / Support on Afdian](https://afdian.net/a/fangsylar)
+[Support on Afdian](https://afdian.com/a/fangsylar)
 
 ## License
 
