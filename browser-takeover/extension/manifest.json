@@ -1,0 +1,21 @@
+{
+  "manifest_version": 3,
+  "name": "Codex Browser Takeover Bridge",
+  "description": "Lets Codex work with already-open, authenticated browser tabs through a local bridge.",
+  "version": "0.1.0",
+  "permissions": [
+    "tabs",
+    "scripting",
+    "activeTab",
+    "storage"
+  ],
+  "host_permissions": [
+    "<all_urls>"
+  ],
+  "background": {
+    "service_worker": "background.js"
+  },
+  "action": {
+    "default_title": "Codex Browser Takeover Bridge"
+  }
+}

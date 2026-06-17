@@ -1,0 +1,10 @@
+{
+  "mcpServers": {
+    "browser-takeover": {
+      "command": "python",
+      "args": [
+        "./scripts/browser_takeover_mcp.py"
+      ]
+    }
+  }
+}

@@ -1,0 +1,25 @@
+{
+  "name": "browser-takeover",
+  "version": "0.1.0",
+  "description": "Attach Codex agents to already-open authenticated Chromium tabs through an extension bridge, or to debuggable browsers through CDP.",
+  "author": {
+    "name": "Local developer"
+  },
+  "skills": "./skills/",
+  "interface": {
+    "displayName": "Browser Takeover",
+    "shortDescription": "Control already-open Chrome or Edge tabs through a local bridge.",
+    "longDescription": "Browser Takeover helps Codex agents work with already-open authenticated Chrome and Edge tabs through a companion extension and localhost bridge. It can also discover local Chromium browsers, connect to DevTools Protocol sessions, inspect tabs, navigate pages, evaluate JavaScript, capture screenshots, and launch a persistent takeover profile when needed.",
+    "developerName": "Local developer",
+    "category": "Productivity",
+    "capabilities": ["Interactive", "Read", "Write"],
+    "defaultPrompt": [
+      "List already-open tabs from my normal browser.",
+      "Control the logged-in page I already have open.",
+      "Check whether my browser is attachable.",
+      "Launch a persistent takeover browser."
+    ],
+    "brandColor": "#2563EB"
+  },
+  "mcpServers": "./.mcp.json"
+}
