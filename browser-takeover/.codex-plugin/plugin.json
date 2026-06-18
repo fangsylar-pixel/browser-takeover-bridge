@@ -1,16 +1,16 @@
 {
   "name": "browser-takeover",
-  "version": "0.6.0+codex.20260618035856",
+  "version": "0.6.0+codex.20260618173122",
   "description": "A local-first AI browser bridge for securely controlling already-open authenticated Chrome and Edge tabs.",
   "author": {
-    "name": "Local developer"
+    "name": "Fangsylar"
   },
   "skills": "./skills/",
   "interface": {
     "displayName": "Browser Takeover",
     "shortDescription": "Secure local control for authenticated Chrome and Edge tabs.",
     "longDescription": "Browser Takeover is a local-first AI browser control layer with visible safety controls, trusted-site restrictions, authenticated localhost bridging, workflow verification, diagnostics, and advanced support for real-world Chrome and Edge pages.",
-    "developerName": "Local developer",
+    "developerName": "Fangsylar",
     "category": "Productivity",
     "capabilities": [
       "Interactive",

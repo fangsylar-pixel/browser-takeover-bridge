@@ -2,6 +2,10 @@
 
 ## 0.6.0
 
+- Added deterministic extension and plugin release archives with SHA-256 checksums.
+- Added release validation, a one-command verification workflow, and tagged GitHub releases.
+- Added privacy, support, contribution, community, issue, and pull-request documentation.
+- Fixed the customer-facing extension name and added public-beta release guidance.
 - Repositioned the extension as an independent local-first AI browser bridge.
 - Rebuilt the popup as a commercial-grade health and safety control center.
 - Added a global automation pause switch.

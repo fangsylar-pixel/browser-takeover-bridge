@@ -118,11 +118,17 @@ the bridge starts after the extension.
 
 ## Tests
 
-Run:
+Run the complete release verification:
+
+```powershell
+python scripts/verify_release.py
+```
+
+Or run individual checks:
 
 ```powershell
 python -m unittest discover -s tests -v
-python -m py_compile scripts/browser_takeover_mcp.py scripts/benchmark_extension.py tests/test_bridge.py
+python -m py_compile scripts/browser_takeover_mcp.py scripts/benchmark_extension.py scripts/release_tools.py scripts/verify_release.py tests/test_bridge.py tests/test_release_tools.py
 node --check extension/background.js
 node --check extension/popup.js
 node tests/test_background_runtime.mjs

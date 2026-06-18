@@ -28,8 +28,11 @@ jobs:
         with:
           node-version: ${{ matrix.node-version }}
 
+      - name: Release validation
+        run: python browser-takeover/scripts/release_tools.py validate
+
       - name: Python syntax
-        run: python -m py_compile browser-takeover/scripts/browser_takeover_mcp.py browser-takeover/scripts/benchmark_extension.py browser-takeover/tests/test_bridge.py
+        run: python -m py_compile browser-takeover/scripts/browser_takeover_mcp.py browser-takeover/scripts/benchmark_extension.py browser-takeover/scripts/release_tools.py browser-takeover/scripts/verify_release.py browser-takeover/tests/test_bridge.py browser-takeover/tests/test_release_tools.py
 
       - name: Python tests
         run: python -m unittest discover -s browser-takeover/tests -v
@@ -60,3 +63,11 @@ jobs:
           ]:
               json.loads(path.read_text(encoding="utf-8"))
               print(f"validated {path}")
+
+      - name: Build release archives
+        run: python browser-takeover/scripts/release_tools.py package
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: browser-takeover-${{ matrix.os }}-py${{ matrix.python-version }}
+          path: dist/

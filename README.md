@@ -1,5 +1,8 @@
 # Browser Takeover Bridge
 
+> Public beta — the core browser-control path is tested and usable. Store distribution and
+> third-party browser compatibility certification are still in progress.
+
 Browser Takeover is a local-first browser control layer that lets AI agents work with Chrome and
 Edge tabs that are already open and already authenticated.
 
@@ -52,6 +55,20 @@ website/
   src/
   public/
   package.json
+```
+
+## Download And Verify
+
+GitHub releases contain:
+
+- `browser-takeover-extension-<version>.zip` for loading the companion extension.
+- `browser-takeover-plugin-<version>.zip` for Codex or MCP-compatible local installation.
+- `SHA256SUMS.txt` for integrity verification.
+
+Maintainers can reproduce these files locally with:
+
+```powershell
+python browser-takeover/scripts/verify_release.py
 ```
 
 ## Product Website
@@ -117,6 +134,9 @@ Useful tools include:
 - The project does not bypass authentication, permissions, CAPTCHAs, paywalls, or browser security boundaries.
 - Treat every connected page as sensitive. Avoid logging private document contents, signed URLs, or account data.
 
+Read the full [privacy policy](PRIVACY.md), [security policy](SECURITY.md), and
+[support guide](SUPPORT.md) before deploying the bridge in a team environment.
+
 ## CDP Boundary
 
 An ordinary Chrome or Edge window cannot be attached through CDP after launch unless it was started with a flag such as:
@@ -144,6 +164,8 @@ Browser Takeover Bridge is open source and built for people experimenting with C
 If it helps you, optional support is welcome:
 
 [Support on Afdian](https://afdian.com/a/fangsylar)
+
+Bug reports and contributions are welcome. See [CONTRIBUTING.md](CONTRIBUTING.md).
 
 ## License
 
