@@ -3,6 +3,9 @@
 > Public beta — the core browser-control path is tested and usable. Store distribution and
 > third-party browser compatibility certification are still in progress.
 
+[Product website](https://fangsylar-pixel.github.io/browser-takeover-bridge/) ·
+[Download v0.6.0](https://github.com/fangsylar-pixel/browser-takeover-bridge/releases/tag/v0.6.0)
+
 Browser Takeover is a local-first browser control layer that lets AI agents work with Chrome and
 Edge tabs that are already open and already authenticated.
 
@@ -75,6 +78,8 @@ python browser-takeover/scripts/verify_release.py
 
 The bilingual product website lives in `website/`. It automatically selects Chinese or English
 from the browser locale and includes a manual language switch.
+
+Public website: <https://fangsylar-pixel.github.io/browser-takeover-bridge/>
 
 ```powershell
 cd website
