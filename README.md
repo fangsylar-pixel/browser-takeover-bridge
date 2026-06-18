@@ -2,6 +2,8 @@
 
 Browser Takeover Bridge lets local AI agents work with browser tabs that are already open and already authenticated.
 
+![Traditional browser automation compared with Browser Takeover Bridge](assets/browser-takeover-comparison.svg)
+
 Most browser automation tools need a new browser profile or a browser that was started with a remote debugging port. This project adds a companion extension and localhost bridge so an agent can discover and control the user's normal Chrome or Edge tabs without asking the user to log in again.
 
 ## What It Can Do
