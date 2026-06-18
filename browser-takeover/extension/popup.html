@@ -1,0 +1,101 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Browser Takeover</title>
+    <link rel="stylesheet" href="popup.css">
+  </head>
+  <body>
+    <main>
+      <header class="hero">
+        <div>
+          <p class="eyebrow">LOCAL AI BROWSER BRIDGE</p>
+          <h1>Browser Takeover</h1>
+          <p class="subtitle">让 AI 安全接管你已经登录的 Chrome 与 Edge 标签页</p>
+        </div>
+        <span id="indicator" class="indicator" aria-label="连接状态"></span>
+      </header>
+
+      <section class="health-card">
+        <div class="health-heading">
+          <div>
+            <span id="statusLabel" class="status-label">正在检查</span>
+            <strong id="status">连接本地桥接服务…</strong>
+          </div>
+          <span id="version" class="version"></span>
+        </div>
+        <div class="metrics">
+          <div><span>协议</span><strong id="protocol">—</strong></div>
+          <div><span>已同步标签</span><strong id="tabs">—</strong></div>
+          <div><span>最后心跳</span><strong id="poll">—</strong></div>
+        </div>
+        <p id="error" class="error" hidden></p>
+      </section>
+
+      <section class="trust-strip">
+        <strong>本地优先</strong>
+        <span>桥接仅监听 127.0.0.1，页面会话无需上传到公共服务。</span>
+      </section>
+
+      <section class="control-card">
+        <div class="section-heading">
+          <div>
+            <h2>安全控制</h2>
+            <p>随时暂停，并限制 AI 只操作你信任的网站。</p>
+          </div>
+          <button id="automation" class="switch" role="switch" aria-checked="true">
+            <span></span>
+          </button>
+        </div>
+
+        <div class="policy-row">
+          <div>
+            <strong>网站访问策略</strong>
+            <span id="policyHint">允许所有网站</span>
+          </div>
+          <select id="sitePolicy" aria-label="网站访问策略">
+            <option value="all">所有网站</option>
+            <option value="trusted">仅受信任网站</option>
+          </select>
+        </div>
+
+        <div class="current-site">
+          <div>
+            <span>当前网站</span>
+            <strong id="activeHost">非网页标签</strong>
+          </div>
+          <button id="trustSite" class="compact" disabled>加入信任</button>
+        </div>
+
+        <button id="advanced" class="advanced">
+          <span>
+            <strong>高级浏览器控制</strong>
+            <small>原生鼠标、键盘、完整页面截图与弹窗处理</small>
+          </span>
+          <b id="advancedState">关闭</b>
+        </button>
+      </section>
+
+      <section class="capabilities">
+        <h2>为真实工作流而生</h2>
+        <div class="capability-grid">
+          <span>已登录标签接管</span>
+          <span>Chrome + Edge</span>
+          <span>Shadow DOM / iframe</span>
+          <span>上传与下载</span>
+          <span>失败恢复与验证</span>
+          <span>本地开放协议</span>
+        </div>
+      </section>
+
+      <div class="actions">
+        <button id="reconnect">重新连接</button>
+        <button id="copyDiagnostics" class="secondary">复制诊断</button>
+        <button id="reload" class="quiet">重新加载扩展</button>
+      </div>
+      <p id="toast" class="toast" aria-live="polite"></p>
+    </main>
+    <script src="popup.js"></script>
+  </body>
+</html>

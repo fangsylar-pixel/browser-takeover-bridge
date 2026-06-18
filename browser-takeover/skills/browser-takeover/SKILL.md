@@ -19,7 +19,21 @@ When the extension is not installed and the current browser is not CDP-attachabl
 
 1. Call `browser_takeover_status` or `browser_takeover_extension_bridge_status`.
 2. Prefer extension tools when the user's goal depends on an already-open, logged-in tab:
+   - `browser_takeover_extension_diagnostics`
    - `browser_takeover_extension_list_tabs`
+   - `browser_takeover_claim_tab`
+   - `browser_takeover_extension_action`
+   - `browser_takeover_release_tab`
+   - `browser_takeover_extension_batch_snapshot`
+   - `browser_takeover_extension_events`
+   - `browser_takeover_extension_wait_event`
+   - `browser_takeover_extension_upload`
+   - `browser_takeover_extension_download`
+   - `browser_takeover_extension_download_status`
+   - `browser_takeover_extension_workflow`
+   - `browser_takeover_extension_full_screenshot`
+   - `browser_takeover_extension_native_input`
+   - `browser_takeover_extension_handle_dialog`
    - `browser_takeover_extension_evaluate`
    - `browser_takeover_extension_navigate`
    - `browser_takeover_extension_screenshot`
@@ -38,6 +52,18 @@ The extension lives at `browser-takeover/extension` inside the plugin. Install i
 4. Select the `browser-takeover/extension` directory.
 
 The MCP server listens only on `127.0.0.1:17321`. The extension polls that local bridge, reports open tabs, and executes requested commands inside those tabs.
+
+Use structured V2 actions for normal reading and interaction. Keep arbitrary JavaScript evaluation
+for advanced compatibility cases. For write actions, include an `expect` block when possible so
+the result is verified by URL, text, element visibility, or final value evidence.
+
+Before diagnosing a connection problem, call `browser_takeover_extension_diagnostics`. A healthy
+client reports fresh registration, tab sync, and polling. `roundTrip` becomes true after at least
+one command result is returned.
+
+Browser-level native input, true full-page screenshots, and JavaScript dialog handling require the
+optional advanced control permission. The user enables it once from the extension popup. Do not
+fall back to arbitrary JavaScript when the task specifically requires trusted input semantics.
 
 ## Practical setup
 
