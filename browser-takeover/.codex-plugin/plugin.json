@@ -1,10 +1,22 @@
 {
   "name": "browser-takeover",
-  "version": "0.6.0+codex.20260618173122",
+  "version": "0.6.0+codex.20260618181149",
   "description": "A local-first AI browser bridge for securely controlling already-open authenticated Chrome and Edge tabs.",
   "author": {
-    "name": "Fangsylar"
+    "name": "Fangsylar",
+    "url": "https://github.com/fangsylar-pixel"
   },
+  "homepage": "https://fangsylar-pixel.github.io/browser-takeover-bridge/",
+  "repository": "https://github.com/fangsylar-pixel/browser-takeover-bridge",
+  "license": "MIT",
+  "keywords": [
+    "browser",
+    "chrome",
+    "edge",
+    "automation",
+    "mcp",
+    "local-first"
+  ],
   "skills": "./skills/",
   "interface": {
     "displayName": "Browser Takeover",
@@ -17,11 +29,13 @@
       "Read",
       "Write"
     ],
+    "websiteURL": "https://fangsylar-pixel.github.io/browser-takeover-bridge/",
+    "privacyPolicyURL": "https://github.com/fangsylar-pixel/browser-takeover-bridge/blob/main/PRIVACY.md",
+    "termsOfServiceURL": "https://github.com/fangsylar-pixel/browser-takeover-bridge/blob/main/TERMS.md",
     "defaultPrompt": [
       "List already-open tabs from my normal browser.",
       "Control the logged-in page I already have open.",
-      "Check whether my browser is attachable.",
-      "Launch a persistent takeover browser."
+      "Check whether my browser is attachable."
     ],
     "brandColor": "#2563EB"
   },
