@@ -1,0 +1,56 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [windows-latest, ubuntu-latest]
+        python-version: ["3.10", "3.12"]
+        node-version: ["20"]
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node-version }}
+
+      - name: Python syntax
+        run: python -m py_compile browser-takeover/scripts/browser_takeover_mcp.py browser-takeover/scripts/benchmark_extension.py browser-takeover/tests/test_bridge.py
+
+      - name: Python tests
+        run: python -m unittest discover -s browser-takeover/tests -v
+
+      - name: Extension syntax
+        run: |
+          node --check browser-takeover/extension/background.js
+          node --check browser-takeover/extension/popup.js
+
+      - name: Extension runtime smoke test
+        run: node browser-takeover/tests/test_background_runtime.mjs
+
+      - name: Validate JSON
+        shell: python
+        run: |
+          import json
+          from pathlib import Path
+          for path in [
+              Path("browser-takeover/extension/manifest.json"),
+              Path("browser-takeover/.codex-plugin/plugin.json"),
+              Path("browser-takeover/.mcp.json"),
+          ]:
+              json.loads(path.read_text(encoding="utf-8"))
+              print(f"validated {path}")

@@ -13,6 +13,12 @@ Most browser automation tools need a new browser profile or a browser that was s
 - Type prompts, click buttons, navigate tabs, and capture screenshots.
 - Fetch image resources that require the browser's logged-in session.
 - Fall back to Chrome DevTools Protocol for browsers launched with `--remote-debugging-port`.
+- Claim tabs using renewable readonly or interactive leases.
+- Use a structured action protocol for reliable click, fill, read, press, select, and snapshot operations.
+- Authenticate extension traffic to the localhost bridge with a per-extension token.
+- Display live connection health and errors in the extension popup.
+- Stream tab lifecycle events and capture multiple open tabs in one readonly batch.
+- Verify write actions using observable URL, text, element, or value evidence.
 
 Verified locally with:
 
@@ -72,11 +78,16 @@ Useful tools include:
 - `browser_takeover_extension_evaluate`
 - `browser_takeover_extension_navigate`
 - `browser_takeover_extension_screenshot`
+- `browser_takeover_claim_tab`
+- `browser_takeover_renew_claim`
+- `browser_takeover_release_tab`
+- `browser_takeover_extension_action`
 
 ## Security Model
 
 - The extension must be installed by the user.
 - The bridge listens only on `127.0.0.1`.
+- Extension traffic is authenticated after registration and CORS is restricted to extension origins.
 - The agent can only access tabs in the browser profile where the extension is installed.
 - The project does not bypass authentication, permissions, CAPTCHAs, paywalls, or browser security boundaries.
 - Treat every connected page as sensitive. Avoid logging private document contents, signed URLs, or account data.

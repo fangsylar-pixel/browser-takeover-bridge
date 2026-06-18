@@ -1,0 +1,35 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Browser Takeover</title>
+    <link rel="stylesheet" href="popup.css">
+  </head>
+  <body>
+    <main>
+      <header>
+        <div>
+          <h1>Browser Takeover</h1>
+          <p id="version"></p>
+        </div>
+        <span id="indicator" class="indicator"></span>
+      </header>
+      <section class="status">
+        <strong id="status">正在检查…</strong>
+        <dl>
+          <div><dt>协议</dt><dd id="protocol">—</dd></div>
+          <div><dt>标签页</dt><dd id="tabs">—</dd></div>
+          <div><dt>最后轮询</dt><dd id="poll">—</dd></div>
+        </dl>
+        <p id="error" class="error" hidden></p>
+      </section>
+      <div class="actions">
+        <button id="reconnect">立即重连</button>
+        <button id="reload" class="secondary">重新加载扩展</button>
+        <button id="advanced" class="wide secondary">启用高级控制</button>
+      </div>
+    </main>
+    <script src="popup.js"></script>
+  </body>
+</html>

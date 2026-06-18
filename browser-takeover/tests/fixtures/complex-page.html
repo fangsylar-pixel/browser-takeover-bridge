@@ -1,0 +1,63 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <title>Browser Takeover Complex Fixture</title>
+    <style>
+      body { font-family: sans-serif; }
+      iframe { width: 500px; height: 180px; }
+      #drag-track { position: relative; width: 320px; height: 30px; background: #ddd; margin: 20px 0; }
+      #drag-handle { position: absolute; left: 0; top: 0; width: 30px; height: 30px; background: #2563eb; }
+      #tall { height: 2200px; background: linear-gradient(#fff, #dbeafe); }
+    </style>
+  </head>
+  <body>
+    <h1>Complex fixture</h1>
+    <button id="coordinate-button" onclick="this.dataset.clicked='true'; this.textContent='Coordinate clicked'">
+      Coordinate target
+    </button>
+    <input id="upload" type="file">
+    <input id="native-text" value="">
+    <button id="dialog-button" onclick="window.__dialogResult = confirm('Continue advanced test?')">Open dialog</button>
+    <div id="drag-track"><div id="drag-handle"></div></div>
+    <div id="upload-result"></div>
+    <shadow-fixture></shadow-fixture>
+    <iframe id="fixture-frame" srcdoc="
+      <!doctype html>
+      <html>
+        <body>
+          <button id='frame-button' onclick=&quot;this.textContent='Frame clicked'&quot;>Frame target</button>
+        </body>
+      </html>
+    "></iframe>
+    <div id="tall">Tall page screenshot fixture</div>
+    <script>
+      customElements.define("shadow-fixture", class extends HTMLElement {
+        constructor() {
+          super();
+          const root = this.attachShadow({ mode: "open" });
+          root.innerHTML = `
+            <button id="shadow-button">Shadow target</button>
+            <span id="shadow-result"></span>
+          `;
+          root.querySelector("#shadow-button").addEventListener("click", () => {
+            root.querySelector("#shadow-result").textContent = "Shadow clicked";
+          });
+        }
+      });
+      document.querySelector("#upload").addEventListener("change", (event) => {
+        const file = event.target.files[0];
+        document.querySelector("#upload-result").textContent = file ? `${file.name}:${file.size}` : "none";
+      });
+      const handle = document.querySelector("#drag-handle");
+      let dragging = false;
+      handle.addEventListener("mousedown", () => dragging = true);
+      document.addEventListener("mousemove", (event) => {
+        if (!dragging) return;
+        const track = document.querySelector("#drag-track").getBoundingClientRect();
+        handle.style.left = `${Math.max(0, Math.min(290, event.clientX - track.left - 15))}px`;
+      });
+      document.addEventListener("mouseup", () => dragging = false);
+    </script>
+  </body>
+</html>
