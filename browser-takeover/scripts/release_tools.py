@@ -45,7 +45,9 @@ def validate_release() -> list[str]:
         PROJECT_ROOT / "LICENSE",
         PROJECT_ROOT / "PRIVACY.md",
         PROJECT_ROOT / "SECURITY.md",
+        PROJECT_ROOT / "TERMS.md",
         PROJECT_ROOT / "CHANGELOG.md",
+        PROJECT_ROOT / ".agents" / "plugins" / "marketplace.json",
         PLUGIN_ROOT / ".mcp.json",
         PLUGIN_ROOT / "README.md",
         PLUGIN_ROOT / "extension" / "background.js",
@@ -59,7 +61,8 @@ def validate_release() -> list[str]:
     if missing:
         raise ValueError("Missing required release files: " + ", ".join(missing))
 
-    for path in [EXTENSION_MANIFEST, PLUGIN_MANIFEST, PLUGIN_ROOT / ".mcp.json"]:
+    marketplace_path = PROJECT_ROOT / ".agents" / "plugins" / "marketplace.json"
+    for path in [EXTENSION_MANIFEST, PLUGIN_MANIFEST, PLUGIN_ROOT / ".mcp.json", marketplace_path]:
         read_json(path)
 
     manifest = read_json(EXTENSION_MANIFEST)
@@ -67,6 +70,14 @@ def validate_release() -> list[str]:
         raise ValueError("The extension must use Manifest V3")
     if manifest.get("host_permissions") != ["<all_urls>"]:
         raise ValueError("Unexpected host permission configuration")
+
+    marketplace = read_json(marketplace_path)
+    entries = [entry for entry in marketplace.get("plugins", []) if entry.get("name") == "browser-takeover"]
+    if len(entries) != 1:
+        raise ValueError("Marketplace must contain exactly one browser-takeover entry")
+    source = entries[0].get("source", {})
+    if source.get("source") != "local" or source.get("path") != "./browser-takeover":
+        raise ValueError("Marketplace browser-takeover source is invalid")
 
     placeholders = []
     placeholder_marker = "[" + "TODO:"
@@ -88,6 +99,7 @@ def validate_release() -> list[str]:
         f"{len(required)} required files",
         "Manifest V3",
         "version consistency",
+        "Codex marketplace entry",
         "no release placeholders",
     ]
 

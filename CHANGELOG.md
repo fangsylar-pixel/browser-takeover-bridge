@@ -2,6 +2,8 @@
 
 ## 0.6.0
 
+- Added a repository-backed Codex Marketplace source and one-command installation instructions.
+- Added complete marketplace metadata, privacy links, terms, discovery keywords, and publisher URLs.
 - Added deterministic extension and plugin release archives with SHA-256 checksums.
 - Added release validation, a one-command verification workflow, and tagged GitHub releases.
 - Added privacy, support, contribution, community, issue, and pull-request documentation.

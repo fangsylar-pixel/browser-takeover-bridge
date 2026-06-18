@@ -6,6 +6,18 @@
 [Product website](https://fangsylar-pixel.github.io/browser-takeover-bridge/) ·
 [Download v0.6.0](https://github.com/fangsylar-pixel/browser-takeover-bridge/releases/tag/v0.6.0)
 
+## Install In Codex
+
+Add this repository as a Codex Marketplace source, then install the plugin:
+
+```powershell
+codex plugin marketplace add fangsylar-pixel/browser-takeover-bridge
+codex plugin add browser-takeover@browser-takeover-marketplace
+```
+
+Restart Codex and open a new thread after installation. The companion Chrome or Edge extension
+still needs to be loaded once from `browser-takeover/extension` or the release ZIP.
+
 Browser Takeover is a local-first browser control layer that lets AI agents work with Chrome and
 Edge tabs that are already open and already authenticated.
 
@@ -140,7 +152,8 @@ Useful tools include:
 - Treat every connected page as sensitive. Avoid logging private document contents, signed URLs, or account data.
 
 Read the full [privacy policy](PRIVACY.md), [security policy](SECURITY.md), and
-[support guide](SUPPORT.md) before deploying the bridge in a team environment.
+[terms of use](TERMS.md) before deploying the bridge in a team environment. For troubleshooting,
+see the [support guide](SUPPORT.md).
 
 ## CDP Boundary
 

@@ -19,6 +19,15 @@ It supports:
 - Pausing automation instantly and restricting commands to trusted hostnames.
 - Copying support diagnostics without exposing trusted-host details.
 
+## Install From The Codex Marketplace Source
+
+```powershell
+codex plugin marketplace add fangsylar-pixel/browser-takeover-bridge
+codex plugin add browser-takeover@browser-takeover-marketplace
+```
+
+Restart Codex and use a new thread after installation so the bundled skill and MCP tools load.
+
 ## Version 0.6 commercial trust controls
 
 Version 0.6 turns the extension popup into a customer-facing control center. It communicates the
