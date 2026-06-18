@@ -60,7 +60,7 @@ const copy = {
     proof: [
       ["0", "次重复登录"],
       ["2", "类主流浏览器"],
-      ["20/20", "自动测试通过"],
+      ["23/23", "自动测试通过"],
       ["200–300ms", "典型快照响应"],
     ],
     outcomes: {
@@ -241,7 +241,7 @@ const copy = {
     proof: [
       ["0", "repeat logins"],
       ["2", "major browsers"],
-      ["20/20", "automated tests"],
+      ["23/23", "automated tests"],
       ["200–300ms", "typical snapshot"],
     ],
     outcomes: {
