@@ -48,6 +48,21 @@ browser-takeover/
   skills/
     browser-takeover/SKILL.md
   README.md
+website/
+  src/
+  public/
+  package.json
+```
+
+## Product Website
+
+The bilingual product website lives in `website/`. It automatically selects Chinese or English
+from the browser locale and includes a manual language switch.
+
+```powershell
+cd website
+npm install
+npm run dev
 ```
 
 ## How It Works
