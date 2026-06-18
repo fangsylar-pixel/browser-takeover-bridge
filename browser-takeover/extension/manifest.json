@@ -1,8 +1,8 @@
 {
   "manifest_version": 3,
-  "name": "Codex Browser Takeover Bridge",
-  "description": "Lets Codex work with already-open, authenticated browser tabs through a local bridge.",
-  "version": "0.5.0",
+  "name": "Browser Takeover — Local AI Bridge",
+  "description": "Securely connect local AI agents to already-open, authenticated Chrome and Edge tabs.",
+  "version": "0.6.0",
   "permissions": [
     "tabs",
     "scripting",
@@ -19,7 +19,7 @@
     "service_worker": "background.js"
   },
   "action": {
-    "default_title": "Codex Browser Takeover Bridge",
+    "default_title": "Browser Takeover — Local AI Bridge",
     "default_popup": "popup.html"
   }
 }

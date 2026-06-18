@@ -19,6 +19,8 @@ Use GitHub private vulnerability reporting when available. Include:
 - Protocol V2 extension traffic uses a per-extension bearer token.
 - Browser CORS responses are restricted to extension origins.
 - Structured actions default to the isolated execution world.
+- Users can pause command execution globally from the extension popup.
+- Trusted-site mode rejects tab commands outside the locally stored hostname list.
 - Arbitrary JavaScript execution is an advanced compatibility feature and should be treated as
   privileged.
 

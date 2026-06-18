@@ -1,6 +1,9 @@
 const BRIDGE_URL = "http://127.0.0.1:17321";
 const CLIENT_ID_KEY = "codexBrowserTakeoverClientId";
 const ADVANCED_CONTROL_KEY = "browserTakeoverAdvancedControl";
+const AUTOMATION_ENABLED_KEY = "browserTakeoverAutomationEnabled";
+const SITE_POLICY_KEY = "browserTakeoverSitePolicy";
+const TRUSTED_HOSTS_KEY = "browserTakeoverTrustedHosts";
 const PROTOCOL_VERSION = 2;
 const RECONNECT_ALARM = "browserTakeoverReconnect";
 
@@ -119,6 +122,55 @@ async function register() {
   pollIntervalMs = Number(registration.pollIntervalMs || pollIntervalMs);
   markConnected({ protocolVersion: Number(registration.protocolVersion || PROTOCOL_VERSION) });
   return registration;
+}
+
+async function securitySettings() {
+  const stored = await chrome.storage.local.get([
+    AUTOMATION_ENABLED_KEY,
+    SITE_POLICY_KEY,
+    TRUSTED_HOSTS_KEY,
+  ]);
+  return {
+    automationEnabled: stored[AUTOMATION_ENABLED_KEY] !== false,
+    sitePolicy: stored[SITE_POLICY_KEY] === "trusted" ? "trusted" : "all",
+    trustedHosts: Array.isArray(stored[TRUSTED_HOSTS_KEY]) ? stored[TRUSTED_HOSTS_KEY] : [],
+  };
+}
+
+function hostFromUrl(url) {
+  try {
+    const parsed = new URL(url);
+    return ["http:", "https:"].includes(parsed.protocol) ? parsed.hostname : "";
+  } catch (_error) {
+    return "";
+  }
+}
+
+async function activeSiteStatus() {
+  const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+  const settings = await securitySettings();
+  const activeHost = hostFromUrl(tab?.url || "");
+  return {
+    ...settings,
+    activeHost,
+    activeTitle: tab?.title || "",
+    activeTrusted: Boolean(activeHost && settings.trustedHosts.includes(activeHost)),
+    localOnly: true,
+  };
+}
+
+async function assertCommandAllowed(command) {
+  if (!command?.tabId) return;
+  const settings = await securitySettings();
+  if (!settings.automationEnabled) {
+    throw new Error("Automation is paused in the extension");
+  }
+  if (settings.sitePolicy !== "trusted") return;
+  const tab = await chrome.tabs.get(Number(command.tabId));
+  const host = hostFromUrl(tab.url || "");
+  if (!host || !settings.trustedHosts.includes(host)) {
+    throw new Error(`Site is not trusted: ${host || tab.url || "unknown"}`);
+  }
 }
 
 async function syncTabs() {
@@ -1052,6 +1104,21 @@ async function setAdvancedControl(command) {
   return { ok: true, enabled };
 }
 
+async function securityControl(command) {
+  const updates = {};
+  if (command.automationEnabled !== undefined) {
+    updates[AUTOMATION_ENABLED_KEY] = Boolean(command.automationEnabled);
+  }
+  if (command.sitePolicy !== undefined) {
+    updates[SITE_POLICY_KEY] = command.sitePolicy === "trusted" ? "trusted" : "all";
+  }
+  if (Array.isArray(command.trustedHosts)) {
+    updates[TRUSTED_HOSTS_KEY] = [...new Set(command.trustedHosts.map((host) => String(host).trim()).filter(Boolean))].sort();
+  }
+  if (Object.keys(updates).length) await chrome.storage.local.set(updates);
+  return { ok: true, ...(await activeSiteStatus()), advancedEnabled: await hasDebuggerPermission() };
+}
+
 async function prepareSystemInput(command) {
   const tab = await chrome.tabs.get(Number(command.tabId));
   await chrome.tabs.update(tab.id, { active: true });
@@ -1082,6 +1149,7 @@ async function runCommand(command) {
     setTimeout(() => chrome.runtime.reload(), 100);
     return { reloading: true };
   }
+  await assertCommandAllowed(command);
   if (command.type === "evaluate") return evaluateInTab(command);
   if (command.type === "inspect") return inspectTab(command);
   if (command.type === "action") return performAction(command);
@@ -1098,6 +1166,7 @@ async function runCommand(command) {
   if (command.type === "nativeInput") return nativeInput(command);
   if (command.type === "handleDialog") return handleJavaScriptDialog(command);
   if (command.type === "advancedControl") return setAdvancedControl(command);
+  if (command.type === "securityControl") return securityControl(command);
   if (command.type === "prepareSystemInput") return prepareSystemInput(command);
   throw new Error(`Unknown command type: ${command.type}`);
 }
@@ -1234,6 +1303,39 @@ chrome.runtime.onMessage?.addListener((message, _sender, sendResponse) => {
   }
   if (message?.type === "advanced-control-status") {
     hasDebuggerPermission().then((enabled) => sendResponse({ ok: true, enabled }));
+    return true;
+  }
+  if (message?.type === "security-status") {
+    Promise.all([activeSiteStatus(), hasDebuggerPermission()]).then(([security, advancedEnabled]) => {
+      sendResponse({ ok: true, ...security, advancedEnabled });
+    });
+    return true;
+  }
+  if (message?.type === "automation-enabled") {
+    chrome.storage.local.set({ [AUTOMATION_ENABLED_KEY]: Boolean(message.enabled) }).then(async () => {
+      sendResponse({ ok: true, ...(await activeSiteStatus()) });
+    });
+    return true;
+  }
+  if (message?.type === "site-policy") {
+    const sitePolicy = message.policy === "trusted" ? "trusted" : "all";
+    chrome.storage.local.set({ [SITE_POLICY_KEY]: sitePolicy }).then(async () => {
+      sendResponse({ ok: true, ...(await activeSiteStatus()) });
+    });
+    return true;
+  }
+  if (message?.type === "trust-current-site") {
+    activeSiteStatus().then(async (status) => {
+      if (!status.activeHost) {
+        sendResponse({ ok: false, error: "Current page is not an HTTP(S) website" });
+        return;
+      }
+      const hosts = new Set(status.trustedHosts);
+      if (message.trusted === false) hosts.delete(status.activeHost);
+      else hosts.add(status.activeHost);
+      await chrome.storage.local.set({ [TRUSTED_HOSTS_KEY]: [...hosts].sort() });
+      sendResponse({ ok: true, ...(await activeSiteStatus()) });
+    });
     return true;
   }
   return false;

@@ -1229,6 +1229,17 @@ def handle_tool(name, args):
         )
         response = BRIDGE_STATE.wait_result(client_id, command_id, float(args.get("timeout", 10)))
         return {**response, "diagnostics": BRIDGE_STATE.diagnostics()}
+    if name == "browser_takeover_extension_security":
+        start_extension_bridge()
+        client_id = args.get("clientId") or BRIDGE_STATE.latest_client_id()
+        if not client_id:
+            raise RuntimeError("No connected extension client found")
+        command = {"type": "securityControl"}
+        for key in ("automationEnabled", "sitePolicy", "trustedHosts"):
+            if key in args:
+                command[key] = args[key]
+        command_id = BRIDGE_STATE.enqueue(client_id, command)
+        return BRIDGE_STATE.wait_result(client_id, command_id, float(args.get("timeout", 10)))
     if name == "browser_takeover_extension_reload":
         start_extension_bridge()
         client_id = args.get("clientId") or BRIDGE_STATE.latest_client_id()
@@ -1769,6 +1780,20 @@ TOOLS = [
             "properties": {
                 "clientId": {"type": "string"},
                 "enabled": {"type": "boolean", "default": True},
+                "timeout": {"type": "number", "default": 10},
+            },
+        },
+    },
+    {
+        "name": "browser_takeover_extension_security",
+        "description": "Read or update the extension safety controls: pause automation, restrict control to trusted sites, and manage trusted hostnames.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "clientId": {"type": "string"},
+                "automationEnabled": {"type": "boolean"},
+                "sitePolicy": {"type": "string", "enum": ["all", "trusted"]},
+                "trustedHosts": {"type": "array", "items": {"type": "string"}},
                 "timeout": {"type": "number", "default": 10},
             },
         },

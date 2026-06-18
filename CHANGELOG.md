@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.6.0
+
+- Repositioned the extension as an independent local-first AI browser bridge.
+- Rebuilt the popup as a commercial-grade health and safety control center.
+- Added a global automation pause switch.
+- Added all-site and trusted-site command policies.
+- Added current-site trust management and a privacy-safe diagnostic copy action.
+- Added the `browser_takeover_extension_security` management tool.
+- Updated customer-facing product, security, and differentiation copy.
+
 ## 0.5.0
 
 - Added a command-level timeout so one stalled page cannot permanently block the extension poll loop.

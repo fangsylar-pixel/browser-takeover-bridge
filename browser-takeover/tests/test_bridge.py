@@ -244,6 +244,7 @@ class ToolCompatibilityTests(unittest.TestCase):
             "browser_takeover_extension_download_status",
             "browser_takeover_extension_wait_event",
             "browser_takeover_extension_workflow",
+            "browser_takeover_extension_security",
             "browser_takeover_extension_full_screenshot",
             "browser_takeover_extension_native_input",
             "browser_takeover_extension_handle_dialog",
@@ -422,6 +423,9 @@ class ToolCompatibilityTests(unittest.TestCase):
         self.assertIn("Page.captureScreenshot", background)
         self.assertIn("captureBeyondViewport: false", background)
         self.assertIn("commandTimeout(command)", background)
+        self.assertIn("AUTOMATION_ENABLED_KEY", background)
+        self.assertIn("TRUSTED_HOSTS_KEY", background)
+        self.assertIn('command.type === "securityControl"', background)
         self.assertIn("Page.handleJavaScriptDialog", background)
         self.assertIn("debugger", manifest["permissions"])
         self.assertNotIn("optional_permissions", manifest)

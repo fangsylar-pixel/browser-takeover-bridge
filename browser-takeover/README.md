@@ -1,6 +1,7 @@
 # Browser Takeover
 
-Browser Takeover is a local Codex plugin for attaching agents to a local Chromium browser through the Chrome DevTools Protocol (CDP).
+Browser Takeover is a local-first AI browser control plugin for attaching agents to authenticated
+Chrome and Edge tabs through an extension bridge or the Chrome DevTools Protocol (CDP).
 
 It supports:
 
@@ -15,6 +16,18 @@ It supports:
 - Claiming tabs with renewable readonly or interactive leases.
 - Running structured browser actions without requiring arbitrary JavaScript.
 - Authenticating extension-to-bridge traffic with a per-extension token.
+- Pausing automation instantly and restricting commands to trusted hostnames.
+- Copying support diagnostics without exposing trusted-host details.
+
+## Version 0.6 commercial trust controls
+
+Version 0.6 turns the extension popup into a customer-facing control center. It communicates the
+local-only architecture, connection health, supported workflow capabilities, and advanced-control
+status at a glance.
+
+Customers can pause all automation, choose between all-site and trusted-site modes, add or remove
+the current hostname, and copy a privacy-safe diagnostic report. The same controls are available
+through `browser_takeover_extension_security` for managed and team deployments.
 
 ## Version 0.2 compatibility upgrade
 

@@ -1,101 +1,113 @@
 :root {
-  color-scheme: light dark;
-  font-family: system-ui, "Microsoft YaHei", sans-serif;
+  color-scheme: light;
+  font-family: Inter, ui-sans-serif, system-ui, "Microsoft YaHei", sans-serif;
+  background: #eef2ff;
+  color: #172033;
 }
+
+* { box-sizing: border-box; }
 
 body {
   margin: 0;
-  min-width: 320px;
-  background: #f8fafc;
-  color: #0f172a;
+  min-width: 390px;
+  background:
+    radial-gradient(circle at 88% 4%, rgb(99 102 241 / 20%), transparent 30%),
+    linear-gradient(180deg, #f8faff 0%, #eef2ff 100%);
 }
 
-main {
-  padding: 16px;
-}
+main { padding: 18px; }
 
-header {
+.hero, .health-heading, .section-heading, .policy-row, .current-site, .actions {
   display: flex;
   align-items: center;
-  justify-content: space-between;
 }
 
-h1 {
-  margin: 0;
-  font-size: 17px;
+.hero { justify-content: space-between; margin-bottom: 14px; }
+
+.eyebrow {
+  margin: 0 0 4px;
+  color: #4f46e5;
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: .12em;
 }
 
-header p {
-  margin: 3px 0 0;
-  color: #64748b;
-  font-size: 12px;
-}
+h1 { margin: 0; font-size: 22px; letter-spacing: -.03em; }
+.subtitle { max-width: 300px; margin: 5px 0 0; color: #64748b; font-size: 12px; line-height: 1.5; }
 
 .indicator {
-  width: 12px;
-  height: 12px;
-  border-radius: 50%;
+  width: 13px;
+  height: 13px;
+  border-radius: 999px;
   background: #f59e0b;
-  box-shadow: 0 0 0 4px rgb(245 158 11 / 15%);
+  box-shadow: 0 0 0 5px rgb(245 158 11 / 14%);
+}
+.indicator.connected { background: #10b981; box-shadow: 0 0 0 5px rgb(16 185 129 / 14%); }
+.indicator.paused { background: #94a3b8; box-shadow: 0 0 0 5px rgb(148 163 184 / 14%); }
+
+.health-card, .control-card {
+  border: 1px solid rgb(203 213 225 / 75%);
+  border-radius: 16px;
+  background: rgb(255 255 255 / 92%);
+  box-shadow: 0 12px 35px rgb(30 41 59 / 8%);
 }
 
-.indicator.connected {
-  background: #16a34a;
-  box-shadow: 0 0 0 4px rgb(22 163 74 / 15%);
-}
+.health-card { padding: 15px; }
+.health-heading { justify-content: space-between; }
+.health-heading > div { display: grid; gap: 3px; }
+.status-label { color: #059669; font-size: 10px; font-weight: 800; letter-spacing: .08em; }
+.health-heading strong { font-size: 14px; }
+.version { padding: 4px 8px; border-radius: 999px; background: #eef2ff; color: #4338ca; font-size: 11px; font-weight: 700; }
 
-.status {
-  margin: 14px 0;
-  padding: 13px;
-  border: 1px solid #e2e8f0;
-  border-radius: 12px;
-  background: white;
-}
-
-dl {
-  margin: 10px 0 0;
-}
-
-dl div {
-  display: flex;
-  justify-content: space-between;
-  padding: 4px 0;
-}
-
-dt {
-  color: #64748b;
-}
-
-dd {
-  margin: 0;
-}
-
-.error {
-  margin: 10px 0 0;
-  color: #b91c1c;
-  overflow-wrap: anywhere;
-}
-
-.actions {
+.metrics {
   display: grid;
-  grid-template-columns: 1fr 1fr;
+  grid-template-columns: repeat(3, 1fr);
   gap: 8px;
+  margin-top: 14px;
 }
+.metrics div { padding: 10px; border-radius: 11px; background: #f8fafc; }
+.metrics span, .current-site span, .policy-row span { display: block; color: #64748b; font-size: 10px; }
+.metrics strong { display: block; margin-top: 4px; font-size: 13px; }
 
-button {
-  border: 0;
-  border-radius: 9px;
-  padding: 9px 10px;
-  background: #2563eb;
-  color: white;
-  cursor: pointer;
-}
+.error { margin: 10px 0 0; padding: 9px; border-radius: 9px; background: #fef2f2; color: #b91c1c; font-size: 11px; overflow-wrap: anywhere; }
 
-button.secondary {
-  background: #e2e8f0;
-  color: #0f172a;
-}
+.trust-strip { display: flex; gap: 8px; margin: 11px 0; padding: 10px 12px; border-radius: 11px; background: #ecfdf5; color: #047857; font-size: 11px; line-height: 1.45; }
+.trust-strip strong { flex: 0 0 auto; }
 
-button.wide {
-  grid-column: 1 / -1;
-}
+.control-card { padding: 15px; }
+.section-heading { justify-content: space-between; }
+h2 { margin: 0; font-size: 13px; }
+.section-heading p { margin: 4px 0 0; color: #64748b; font-size: 10px; }
+
+.switch { position: relative; width: 42px; height: 24px; padding: 0; border: 0; border-radius: 999px; background: #cbd5e1; cursor: pointer; transition: .2s; }
+.switch span { position: absolute; top: 3px; left: 3px; width: 18px; height: 18px; border-radius: 50%; background: white; box-shadow: 0 2px 5px rgb(15 23 42 / 25%); transition: .2s; }
+.switch[aria-checked="true"] { background: #4f46e5; }
+.switch[aria-checked="true"] span { transform: translateX(18px); }
+
+.policy-row, .current-site { justify-content: space-between; margin-top: 13px; padding-top: 13px; border-top: 1px solid #e2e8f0; }
+.policy-row strong, .current-site strong { font-size: 12px; }
+.policy-row span { margin-top: 3px; }
+select { max-width: 130px; border: 1px solid #cbd5e1; border-radius: 8px; padding: 6px 8px; background: white; color: #334155; font-size: 11px; }
+
+button { font: inherit; cursor: pointer; }
+.compact { border: 1px solid #c7d2fe; border-radius: 8px; padding: 6px 9px; background: #eef2ff; color: #4338ca; font-size: 10px; font-weight: 700; }
+.compact:disabled { cursor: default; opacity: .45; }
+
+.advanced { display: flex; width: 100%; align-items: center; justify-content: space-between; margin-top: 13px; padding: 11px; border: 1px solid #e2e8f0; border-radius: 11px; background: #f8fafc; color: #172033; text-align: left; }
+.advanced span { display: grid; gap: 3px; }
+.advanced strong { font-size: 11px; }
+.advanced small { color: #64748b; font-size: 9px; }
+.advanced b { color: #64748b; font-size: 10px; }
+.advanced.enabled { border-color: #c7d2fe; background: #eef2ff; }
+.advanced.enabled b { color: #4338ca; }
+
+.capabilities { margin: 14px 0; }
+.capabilities h2 { margin-bottom: 8px; color: #475569; }
+.capability-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; }
+.capability-grid span { padding: 8px 9px; border: 1px solid rgb(203 213 225 / 70%); border-radius: 9px; background: rgb(255 255 255 / 60%); color: #475569; font-size: 10px; }
+
+.actions { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+.actions button { border: 0; border-radius: 10px; padding: 9px 10px; background: #4f46e5; color: white; font-weight: 700; font-size: 11px; }
+.actions .secondary { background: #e0e7ff; color: #3730a3; }
+.actions .quiet { grid-column: 1 / -1; background: transparent; color: #64748b; font-weight: 500; }
+.toast { min-height: 14px; margin: 6px 0 0; color: #4338ca; text-align: center; font-size: 10px; }
