@@ -567,6 +567,9 @@ class BridgeHandler(BaseHTTPRequestHandler):
         if parsed.path == "/bridge/status":
             write_http_json(self, {"ok": True, **BRIDGE_STATE.status()})
             return
+        if parsed.path == "/bridge/tabs":
+            write_http_json(self, {"tabs": BRIDGE_STATE.all_tabs(), "claims": BRIDGE_STATE.list_claims()})
+            return
         if parsed.path == "/extension/poll":
             client_id = (query.get("clientId") or [""])[0]
             if not client_id:
@@ -630,6 +633,30 @@ class BridgeHandler(BaseHTTPRequestHandler):
                     return
                 recorded = BRIDGE_STATE.record_events(client_id, payload.get("events") or [])
                 write_http_json(self, {"ok": True, "recorded": len(recorded)})
+                return
+            if parsed.path == "/bridge/navigate":
+                nav_client_id = payload.get("clientId") or BRIDGE_STATE.latest_client_id()
+                nav_tab_id = payload.get("tabId")
+                nav_url = payload.get("url", "about:blank")
+                nav_timeout = float(payload.get("timeout", 30))
+                if not nav_client_id:
+                    write_http_json(self, {"ok": False, "error": "clientId required"}, 400)
+                    return
+                nav_cmd_id = BRIDGE_STATE.enqueue(nav_client_id, {"type": "navigate", "tabId": nav_tab_id, "url": nav_url})
+                nav_result = BRIDGE_STATE.wait_result(nav_client_id, nav_cmd_id, nav_timeout)
+                write_http_json(self, nav_result)
+                return
+            if parsed.path == "/bridge/evaluate":
+                ev_client_id = payload.get("clientId") or BRIDGE_STATE.latest_client_id()
+                ev_tab_id = payload.get("tabId")
+                ev_expression = payload.get("expression", "")
+                ev_timeout = float(payload.get("timeout", 30))
+                if not ev_client_id:
+                    write_http_json(self, {"ok": False, "error": "clientId required"}, 400)
+                    return
+                ev_cmd_id = BRIDGE_STATE.enqueue(ev_client_id, {"type": "evaluate", "tabId": ev_tab_id, "expression": ev_expression})
+                ev_result = BRIDGE_STATE.wait_result(ev_client_id, ev_cmd_id, ev_timeout)
+                write_http_json(self, ev_result)
                 return
             write_http_json(self, {"ok": False, "error": "not found"}, 404)
         except Exception as exc:
