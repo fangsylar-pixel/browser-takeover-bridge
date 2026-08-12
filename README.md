@@ -21,38 +21,35 @@ still needs to be loaded once from `browser-takeover/extension` or the release Z
 
 ## Install In MARVIS
 
-MARVIS can load the Browser Takeover skill files, but some versions do not automatically register
-the bundled `browser-takeover/.mcp.json`. If the skill appears installed but no
-`browser_takeover_*` tools are available, add the MCP server manually in MARVIS:
+Browser Takeover supports MARVIS's newline-delimited JSON MCP transport as well as the
+`Content-Length` transport used by Codex and other clients.
 
-```json
-{
-  "mcpServers": {
-    "browser-takeover": {
-      "command": "python",
-      "args": [
-        "C:\\absolute\\path\\to\\browser-takeover\\scripts\\browser_takeover_mcp.py"
-      ]
-    }
-  }
-}
-```
+1. Download the extension ZIP from the latest release and extract it to a permanent folder.
+2. Open `chrome://extensions` or `edge://extensions`, enable developer mode, choose
+   **Load unpacked**, and select the extracted folder containing `manifest.json`.
+3. From the extracted plugin directory, run:
 
-Use an absolute path because MARVIS may start MCP servers from a different working directory.
-Restart MARVIS after saving the MCP configuration, then open a new conversation and confirm that
-`browser_takeover_extension_bridge_status` is available.
+   ```powershell
+   powershell -ExecutionPolicy Bypass -File browser-takeover\scripts\install_marvis.ps1
+   ```
 
-The companion extension is still required:
+4. Copy the generated JSON into **MARVIS > Custom MCP configuration**, save it, and restart
+   MARVIS. The generator uses absolute Python and server paths so MARVIS does not depend on its
+   working directory or `PATH`.
+5. Verify the complete connection:
 
-1. Open `chrome://extensions` or `edge://extensions`.
-2. Enable developer mode.
-3. Choose **Load unpacked**.
-4. Select the installed `browser-takeover/extension` directory.
+   ```powershell
+   powershell -ExecutionPolicy Bypass -File browser-takeover\scripts\doctor_marvis.ps1
+   ```
+
+The doctor checks the server script, extension package, bridge listener, connected extension
+clients, and synchronized browser tabs.
 
 ### MARVIS Troubleshooting
 
-- **Tools are missing:** the skill was copied, but the MCP server was not registered. Add the
-  configuration above and restart MARVIS.
+- **Status remains `initializing`:** update to a release that includes MARVIS NDJSON compatibility.
+  Older servers only accepted `Content-Length` framing and could wait forever for MARVIS.
+- **Tools are missing:** run `install_marvis.ps1`, paste the generated JSON, and restart MARVIS.
 - **Port 17321 is listening, but MARVIS shows no tools:** a detached
   `browser_takeover_mcp.py` process is running outside MARVIS. Stop that process before
   restarting the registered MCP server to avoid a port conflict.
@@ -235,4 +232,3 @@ Bug reports and contributions are welcome. See [CONTRIBUTING.md](CONTRIBUTING.md
 ## License
 
 MIT
-
