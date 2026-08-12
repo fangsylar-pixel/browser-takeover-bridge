@@ -18,6 +18,53 @@ codex plugin add browser-takeover@browser-takeover-marketplace
 Restart Codex and open a new thread after installation. The companion Chrome or Edge extension
 still needs to be loaded once from `browser-takeover/extension` or the release ZIP.
 
+
+## Install In MARVIS
+
+MARVIS can load the Browser Takeover skill files, but some versions do not automatically register
+the bundled `browser-takeover/.mcp.json`. If the skill appears installed but no
+`browser_takeover_*` tools are available, add the MCP server manually in MARVIS:
+
+```json
+{
+  "mcpServers": {
+    "browser-takeover": {
+      "command": "python",
+      "args": [
+        "C:\\absolute\\path\\to\\browser-takeover\\scripts\\browser_takeover_mcp.py"
+      ]
+    }
+  }
+}
+```
+
+Use an absolute path because MARVIS may start MCP servers from a different working directory.
+Restart MARVIS after saving the MCP configuration, then open a new conversation and confirm that
+`browser_takeover_extension_bridge_status` is available.
+
+The companion extension is still required:
+
+1. Open `chrome://extensions` or `edge://extensions`.
+2. Enable developer mode.
+3. Choose **Load unpacked**.
+4. Select the installed `browser-takeover/extension` directory.
+
+### MARVIS Troubleshooting
+
+- **Tools are missing:** the skill was copied, but the MCP server was not registered. Add the
+  configuration above and restart MARVIS.
+- **Port 17321 is listening, but MARVIS shows no tools:** a detached
+  `browser_takeover_mcp.py` process is running outside MARVIS. Stop that process before
+  restarting the registered MCP server to avoid a port conflict.
+- **`clients: []` or `tabCount: 0`:** no extension client is connected. Check that
+  the unpacked extension is loaded in the same Chrome or Edge profile that owns the target tabs.
+- **Bridge status is healthy but tabs are unavailable:** open a normal web page in that browser
+  profile and check the extension popup for paused automation, trusted-site restrictions, or
+  connection errors.
+
+A healthy installation has all three layers connected: MARVIS lists the MCP tools, the local bridge
+answers on `127.0.0.1:17321`, and bridge diagnostics report at least one fresh extension client.
+
 Browser Takeover is a local-first browser control layer that lets AI agents work with Chrome and
 Edge tabs that are already open and already authenticated.
 
@@ -188,3 +235,4 @@ Bug reports and contributions are welcome. See [CONTRIBUTING.md](CONTRIBUTING.md
 ## License
 
 MIT
+
