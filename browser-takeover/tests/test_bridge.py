@@ -2,6 +2,7 @@ import importlib.util
 import json
 import threading
 import time
+import tempfile
 import unittest
 import urllib.error
 import urllib.request
@@ -250,8 +251,79 @@ class ToolCompatibilityTests(unittest.TestCase):
             "browser_takeover_extension_handle_dialog",
             "browser_takeover_extension_advanced_control",
         }
+        monitoring = {
+            "browser_takeover_monitor_create",
+            "browser_takeover_monitor_check",
+            "browser_takeover_monitor_list",
+            "browser_takeover_monitor_history",
+            "browser_takeover_monitor_update",
+            "browser_takeover_monitor_delete",
+        }
         self.assertTrue(legacy.issubset(names))
         self.assertTrue(v2.issubset(names))
+        self.assertTrue(monitoring.issubset(names))
+
+    def test_monitor_check_reads_claimed_tab_and_detects_change(self):
+        original_state = bridge.BRIDGE_STATE
+        original_start = bridge.start_extension_bridge
+        original_store = bridge.MONITOR_STORE
+        bridge.BRIDGE_STATE = bridge.ExtensionBridgeState()
+        bridge.start_extension_bridge = lambda: {"started": False, "test": True}
+        with tempfile.TemporaryDirectory() as temp_dir:
+            bridge.MONITOR_STORE = bridge.MonitorStore(Path(temp_dir) / "monitors.json")
+            try:
+                bridge.BRIDGE_STATE.register("extension-monitor", {"protocolVersion": 2})
+                bridge.BRIDGE_STATE.update_tabs(
+                    "extension-monitor",
+                    [{"id": 88, "title": "Monitor Test", "url": "https://example.test/product"}],
+                )
+                monitor = bridge.handle_tool(
+                    "browser_takeover_monitor_create",
+                    {
+                        "name": "Product title",
+                        "urlPattern": "example.test/product",
+                        "target": {"css": "h1"},
+                        "rule": {"type": "changed"},
+                    },
+                )["monitor"]
+                values = iter(["Old title", "New title"])
+
+                def fake_extension():
+                    handled = 0
+                    while handled < 2:
+                        command = bridge.BRIDGE_STATE.poll("extension-monitor")
+                        if not command:
+                            time.sleep(0.01)
+                            continue
+                        bridge.BRIDGE_STATE.complete(
+                            "extension-monitor",
+                            command["id"],
+                            {
+                                "ok": True,
+                                "result": {
+                                    "ok": True,
+                                    "value": next(values),
+                                    "title": "Monitor Test",
+                                    "href": "https://example.test/product",
+                                },
+                            },
+                        )
+                        handled += 1
+
+                worker = threading.Thread(target=fake_extension)
+                worker.start()
+                first = bridge.handle_tool("browser_takeover_monitor_check", {"monitorId": monitor["monitorId"], "timeout": 2})
+                second = bridge.handle_tool("browser_takeover_monitor_check", {"monitorId": monitor["monitorId"], "timeout": 2})
+                worker.join(timeout=2)
+                self.assertTrue(first["baselineCreated"])
+                self.assertFalse(first["changed"])
+                self.assertTrue(second["changed"])
+                self.assertTrue(second["triggered"])
+                self.assertEqual(bridge.BRIDGE_STATE.list_claims(), [])
+            finally:
+                bridge.BRIDGE_STATE = original_state
+                bridge.start_extension_bridge = original_start
+                bridge.MONITOR_STORE = original_store
 
     def test_v2_action_round_trip_uses_claimed_tab(self):
         original_state = bridge.BRIDGE_STATE

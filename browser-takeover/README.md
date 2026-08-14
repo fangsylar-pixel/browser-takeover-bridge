@@ -111,6 +111,38 @@ Available extension tools:
 - `browser_takeover_release_tab`
 - `browser_takeover_extension_action`
 
+### Persistent webpage monitoring
+
+Browser Takeover can keep local monitor definitions and compare repeated readonly page captures. It
+does not run its own scheduler; use the host agent's scheduled-task feature (for example MARVIS
+Automatic Tasks) to call `browser_takeover_monitor_check` at the desired interval.
+
+Monitor tools:
+
+- `browser_takeover_monitor_create` creates a monitor for a URL substring, an optional semantic or
+  CSS target, and a trigger rule.
+- `browser_takeover_monitor_check` finds a matching open tab, uses a temporary readonly claim,
+  captures content, saves a local snapshot, and reports changes and trigger state.
+- `browser_takeover_monitor_list` lists monitors without exposing stored page text.
+- `browser_takeover_monitor_history` returns recent checks; page content is omitted unless
+  `includeContent` is explicitly enabled.
+- `browser_takeover_monitor_update` pauses/resumes a monitor or changes its name or rule.
+- `browser_takeover_monitor_delete` removes the monitor and its local history.
+
+Supported rules are `changed`, `contains`, `not_contains`, `equals`, `regex`, `number_above`, and
+`number_below`. The first check creates a baseline for `changed`. Monitor data is stored locally in
+`%LOCALAPPDATA%\\BrowserTakeover\\monitors.json` on Windows or
+`~/.browser-takeover/monitors.json` elsewhere. Set `BROWSER_TAKEOVER_MONITOR_FILE` to override it.
+
+Example MARVIS workflow:
+
+1. Open the target page in the browser profile connected to Browser Takeover.
+2. Create a monitor with `urlPattern: "example.com/product"`, `target: {"css": ".price"}`, and
+   `rule: {"type": "number_below", "value": 500}`.
+3. Run one check to establish the baseline.
+4. Create a MARVIS Automatic Task that calls the monitor check periodically and only notifies when
+   `newlyTriggered` is true.
+
 ### Local bridge security
 
 The extension registers with protocol version and capability metadata. The bridge returns a
@@ -137,7 +169,7 @@ Or run individual checks:
 
 ```powershell
 python -m unittest discover -s tests -v
-python -m py_compile scripts/browser_takeover_mcp.py scripts/benchmark_extension.py scripts/release_tools.py scripts/verify_release.py tests/test_bridge.py tests/test_release_tools.py
+python -m py_compile scripts/browser_takeover_mcp.py scripts/webpage_monitor.py scripts/benchmark_extension.py scripts/release_tools.py scripts/verify_release.py tests/test_bridge.py tests/test_webpage_monitor.py tests/test_release_tools.py
 node --check extension/background.js
 node --check extension/popup.js
 node tests/test_background_runtime.mjs

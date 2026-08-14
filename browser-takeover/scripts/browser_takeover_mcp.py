@@ -23,6 +23,12 @@ import urllib.request
 from pathlib import Path
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
+SCRIPT_DIR = Path(__file__).resolve().parent
+if str(SCRIPT_DIR) not in sys.path:
+    sys.path.insert(0, str(SCRIPT_DIR))
+
+from webpage_monitor import MonitorStore
+
 
 def windows_system_input(action, viewport):
     if os.name != "nt":
@@ -476,6 +482,7 @@ class ExtensionBridgeState:
 
 BRIDGE_STATE = ExtensionBridgeState()
 BRIDGE_SERVER = None
+MONITOR_STORE = MonitorStore()
 
 
 def read_message():
@@ -906,10 +913,116 @@ def cdp_call(host, port, method, params=None, page_id=None):
         ws.close()
 
 
+def monitor_tab(monitor, client_id=None, tab_id=None):
+    tabs = BRIDGE_STATE.all_tabs()
+    if client_id and tab_id is not None:
+        for tab in tabs:
+            if tab.get("clientId") == client_id and str(tab.get("id")) == str(tab_id):
+                return tab
+        raise RuntimeError("Requested monitor tab is not currently reported by the extension")
+    pattern = str(monitor.get("urlPattern") or "").casefold()
+    matches = [tab for tab in tabs if pattern in str(tab.get("url") or tab.get("pendingUrl") or "").casefold()]
+    if not matches:
+        raise RuntimeError(f"No open tab matches monitor urlPattern: {monitor.get('urlPattern')}")
+    return matches[0]
+
+
+def check_monitor(args):
+    monitor_id = args.get("monitorId")
+    if not monitor_id:
+        raise RuntimeError("monitorId is required")
+    monitor = MONITOR_STORE.get(monitor_id)
+    if monitor.get("status") != "active":
+        raise RuntimeError("Monitor is paused")
+    start_extension_bridge()
+    temporary_claim = None
+    claim_id = args.get("claimId")
+    if claim_id:
+        claim = BRIDGE_STATE.require_claim(claim_id, write=False)
+        tab = monitor_tab(monitor, claim["extensionClientId"], claim["tabId"])
+    else:
+        tab = monitor_tab(monitor, args.get("clientId"), args.get("tabId"))
+        temporary_claim = BRIDGE_STATE.claim_tab(
+            tab["clientId"],
+            tab["id"],
+            owner=args.get("owner") or f"monitor:{monitor_id}",
+            mode="readonly",
+            ttl=max(30, int(float(args.get("timeout", 10))) + 10),
+        )
+        claim = temporary_claim
+    target = monitor.get("target") or {}
+    action = {
+        "type": "read" if target else "snapshot",
+        "maxText": max(1000, min(int(args.get("maxText", 20000)), 100000)),
+        "maxControls": 0,
+    }
+    if target:
+        action["target"] = target
+        if args.get("attribute"):
+            action["attribute"] = args.get("attribute")
+    try:
+        command_id = BRIDGE_STATE.enqueue(
+            claim["extensionClientId"],
+            {"type": "action", "tabId": claim["tabId"], "action": action},
+        )
+        response = BRIDGE_STATE.wait_result(
+            claim["extensionClientId"],
+            command_id,
+            float(args.get("timeout", 10)),
+        )
+        action_result = response.get("result") or {}
+        if not response.get("ok") or not action_result.get("ok"):
+            raise RuntimeError(response.get("error") or action_result.get("error") or "Monitor read failed")
+        value = action_result.get("value")
+        content = value.get("text", "") if isinstance(value, dict) and "text" in value else value
+        source = {
+            "clientId": claim["extensionClientId"],
+            "tabId": claim["tabId"],
+            "title": action_result.get("title") or tab.get("title"),
+            "url": action_result.get("href") or tab.get("url"),
+            "target": target,
+        }
+        return MONITOR_STORE.record(monitor_id, content, source=source)
+    finally:
+        if temporary_claim:
+            BRIDGE_STATE.release_claim(temporary_claim["claimId"])
+
+
 def handle_tool(name, args):
     args = args or {}
     host = args.get("host", "127.0.0.1")
     port = int(args.get("port", 9222))
+    if name == "browser_takeover_monitor_create":
+        return {
+            "monitor": MONITOR_STORE.create(
+                args.get("name"),
+                args.get("urlPattern"),
+                target=args.get("target"),
+                rule=args.get("rule"),
+                metadata=args.get("metadata"),
+            )
+        }
+    if name == "browser_takeover_monitor_check":
+        return check_monitor(args)
+    if name == "browser_takeover_monitor_list":
+        return {"monitors": MONITOR_STORE.list(status=args.get("status"))}
+    if name == "browser_takeover_monitor_history":
+        return MONITOR_STORE.history(
+            args.get("monitorId"),
+            limit=args.get("limit", 20),
+            include_content=bool(args.get("includeContent", False)),
+        )
+    if name == "browser_takeover_monitor_update":
+        return {
+            "monitor": MONITOR_STORE.update(
+                args.get("monitorId"),
+                status=args.get("status"),
+                rule=args.get("rule"),
+                name=args.get("name"),
+            )
+        }
+    if name == "browser_takeover_monitor_delete":
+        return MONITOR_STORE.delete(args.get("monitorId"))
     if name == "browser_takeover_extension_bridge_status":
         bridge = start_extension_bridge()
         return {**BRIDGE_STATE.status(), "startup": bridge}
@@ -1382,7 +1495,114 @@ def handle_tool(name, args):
     raise RuntimeError(f"Unknown tool: {name}")
 
 
+MONITOR_RULE_SCHEMA = {
+    "type": "object",
+    "required": ["type"],
+    "properties": {
+        "type": {
+            "type": "string",
+            "enum": ["changed", "contains", "not_contains", "equals", "regex", "number_above", "number_below"],
+        },
+        "value": {},
+        "caseSensitive": {"type": "boolean", "default": False},
+        "numberPattern": {"type": "string", "description": "Optional regex used to extract a number; use capture group 1 when present."},
+    },
+}
+
+
+MONITOR_TARGET_SCHEMA = {
+    "type": "object",
+    "properties": {
+        "css": {"type": "string"},
+        "testId": {"type": "string"},
+        "role": {"type": "string"},
+        "name": {"type": "string"},
+        "text": {"type": "string"},
+        "label": {"type": "string"},
+        "index": {"type": "integer", "minimum": 0},
+        "shadowPath": {"type": "array", "items": {"type": "string"}},
+    },
+}
+
+
 TOOLS = [
+    {
+        "name": "browser_takeover_monitor_create",
+        "description": "Create a persistent webpage content monitor. The first check establishes a baseline; later checks report changes and rule matches.",
+        "inputSchema": {
+            "type": "object",
+            "required": ["name", "urlPattern"],
+            "properties": {
+                "name": {"type": "string"},
+                "urlPattern": {"type": "string", "description": "Substring used to find a currently open matching tab."},
+                "target": MONITOR_TARGET_SCHEMA,
+                "rule": MONITOR_RULE_SCHEMA,
+                "metadata": {"type": "object"},
+            },
+        },
+    },
+    {
+        "name": "browser_takeover_monitor_check",
+        "description": "Read a matching open tab through a temporary readonly claim, compare it with the previous snapshot, evaluate the monitor rule, and save history.",
+        "inputSchema": {
+            "type": "object",
+            "required": ["monitorId"],
+            "properties": {
+                "monitorId": {"type": "string"},
+                "claimId": {"type": "string", "description": "Optional existing readonly or interactive claim."},
+                "clientId": {"type": "string"},
+                "tabId": {"type": ["integer", "string"]},
+                "attribute": {"type": "string"},
+                "maxText": {"type": "integer", "minimum": 1000, "maximum": 100000, "default": 20000},
+                "timeout": {"type": "number", "minimum": 1, "maximum": 60, "default": 10},
+                "owner": {"type": "string"},
+            },
+        },
+    },
+    {
+        "name": "browser_takeover_monitor_list",
+        "description": "List persistent webpage monitors and their latest status without returning stored page content.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {"status": {"type": "string", "enum": ["active", "paused"]}},
+        },
+    },
+    {
+        "name": "browser_takeover_monitor_history",
+        "description": "Read recent checks for a webpage monitor, including hashes, trigger state, and source page metadata.",
+        "inputSchema": {
+            "type": "object",
+            "required": ["monitorId"],
+            "properties": {
+                "monitorId": {"type": "string"},
+                "limit": {"type": "integer", "minimum": 1, "maximum": 100, "default": 20},
+                "includeContent": {"type": "boolean", "default": False},
+            },
+        },
+    },
+    {
+        "name": "browser_takeover_monitor_update",
+        "description": "Pause or resume a monitor, rename it, or replace its trigger rule.",
+        "inputSchema": {
+            "type": "object",
+            "required": ["monitorId"],
+            "properties": {
+                "monitorId": {"type": "string"},
+                "status": {"type": "string", "enum": ["active", "paused"]},
+                "name": {"type": "string"},
+                "rule": MONITOR_RULE_SCHEMA,
+            },
+        },
+    },
+    {
+        "name": "browser_takeover_monitor_delete",
+        "description": "Permanently delete a webpage monitor and its locally stored history.",
+        "inputSchema": {
+            "type": "object",
+            "required": ["monitorId"],
+            "properties": {"monitorId": {"type": "string"}},
+        },
+    },
     {
         "name": "browser_takeover_status",
         "description": "Inspect running Chrome/Edge processes and common local CDP ports.",
