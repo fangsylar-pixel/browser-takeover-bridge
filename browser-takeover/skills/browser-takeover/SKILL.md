@@ -35,6 +35,7 @@ When the extension is not installed and the current browser is not CDP-attachabl
    - `browser_takeover_extension_native_input`
    - `browser_takeover_extension_handle_dialog`
    - `browser_takeover_extension_evaluate`
+   - `browser_takeover_extension_paginate`
    - `browser_takeover_extension_navigate`
    - `browser_takeover_extension_screenshot`
    - `browser_takeover_monitor_create`
@@ -66,6 +67,16 @@ the result is verified by URL, text, element visibility, or final value evidence
 Before diagnosing a connection problem, call `browser_takeover_extension_diagnostics`. A healthy
 client reports fresh registration, tab sync, and polling. `roundTrip` becomes true after at least
 one command result is returned.
+
+For large DOM-paginated lists, prefer `browser_takeover_extension_paginate` over an agent-side
+page loop. It performs SPA change waits, row deduplication, and structured field extraction within
+the tab while the bridge automatically keeps the interactive claim alive.
+
+Pagination requires an interactive claim because it clicks the next-page control. Provide
+`rowSelector`, `nextSelector`, and optional `fields`, `keyField`, `maxPages`, and `waitTimeout`.
+Do not use it for infinite-scroll pages. If a command returns `EXTENSION_COMMAND_TIMEOUT`, inspect
+diagnostics after the automatic recovery attempt before retrying; do not immediately start an
+unbounded retry loop.
 
 Browser-level native input, true full-page screenshots, and JavaScript dialog handling require the
 optional advanced control permission. The user enables it once from the extension popup. Do not

@@ -18,6 +18,8 @@ It supports:
 - Authenticating extension-to-bridge traffic with a per-extension token.
 - Pausing automation instantly and restricting commands to trusted hostnames.
 - Copying support diagnostics without exposing trusted-host details.
+- Recovering automatically from stalled extension result channels and excluding duplicate unhealthy extension instances.
+- Traversing paginated SPA lists in one MCP call with structured fields and deduplication.
 
 ## Install From The Codex Marketplace Source
 
@@ -53,7 +55,8 @@ The V2 flow is:
 
 Claims can be `readonly` or `interactive`. Multiple readonly claims may observe a tab, while
 an interactive claim prevents a different owner from writing to the same tab. Claims expire
-automatically and can be extended with `browser_takeover_renew_claim`.
+automatically, default to five minutes, renew during active long-running work, and can be extended
+explicitly with `browser_takeover_renew_claim`.
 
 Structured actions currently support:
 
@@ -79,6 +82,48 @@ elements appearing or disappearing, and final field values.
 `browser_takeover_extension_batch_snapshot` can read up to 20 existing tabs in one operation.
 Temporary readonly claims prevent accidental writes while enabling multi-tab research and account
 comparison workflows.
+
+### Reliable long tasks and pagination
+
+Interactive and readonly claims now default to a 300-second lease. Active actions renew a claim
+before it approaches expiry, and multi-step workflows renew before every attempt. Workflows also
+accept `taskTimeout` (default `300` seconds) so a failed step cannot retry forever.
+
+Use `browser_takeover_extension_paginate` when a list spans multiple DOM-rendered pages. It clicks
+the configured next-page element inside the extension, waits for row content to change, deduplicates
+results, and returns all pages in one MCP response:
+
+```json
+{
+  "claimId": "claim_...",
+  "rowSelector": ".article-row",
+  "nextSelector": "button.next-page",
+  "fields": {
+    "title": ".title",
+    "url": { "css": "a.title", "attribute": "href" },
+    "date": ".publish-date"
+  },
+  "keyField": "url",
+  "maxPages": 50,
+  "waitTimeout": 10000,
+  "timeout": 120
+}
+```
+
+The next-page control is considered finished when it is missing, disabled, has
+`aria-disabled="true"`, or has a `disabled` class. `maxPages` is capped at 200. For infinite-scroll
+pages, use the structured `scroll` action instead.
+
+### Timeout recovery and duplicate extensions
+
+Extension commands have a bounded wait. When a result does not arrive, the bridge returns an
+`EXTENSION_COMMAND_TIMEOUT` error, removes the stale command, and queues a rate-limited extension
+reload when polling is still alive. This keeps later commands from being blocked behind a dead one.
+
+If the same browser has two unpacked copies installed, diagnostics reports `routing.active` for
+each client. Only the healthiest instance with the strongest capability set is allowed to expose
+tabs or receive new commands. Remove duplicate extension cards from `edge://extensions` or
+`chrome://extensions` even though the bridge can isolate them automatically.
 
 ## Two takeover modes
 

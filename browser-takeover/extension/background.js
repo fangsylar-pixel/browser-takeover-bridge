@@ -115,6 +115,7 @@ async function register() {
       "browser-downloads",
       "event-stream",
       "verified-actions",
+      "paginate",
       ...(advancedEnabled ? ["native-input", "full-page-screenshot", "dialog-control"] : []),
     ],
   });
@@ -210,6 +211,65 @@ async function evaluateInTab(command) {
     world: "MAIN",
   });
   return injection ? injection.result : null;
+}
+
+async function paginateTab(command) {
+  const config = command.config || {};
+  const injection = await chrome.scripting.executeScript({
+    target: { tabId: Number(command.tabId) },
+    world: "MAIN",
+    args: [config],
+    func: async (options) => {
+      const rowSelector = String(options.rowSelector || "");
+      const nextSelector = String(options.nextSelector || "");
+      if (!rowSelector || !nextSelector) throw new Error("rowSelector and nextSelector are required");
+      const maxPages = Math.max(1, Math.min(Number(options.maxPages || 50), 200));
+      const waitTimeout = Math.max(500, Math.min(Number(options.waitTimeout || 10000), 30000));
+      const fields = options.fields && typeof options.fields === "object" ? options.fields : null;
+      const keyField = String(options.keyField || "");
+      const rows = [];
+      const seen = new Set();
+      const readValue = (root, descriptor) => {
+        const spec = typeof descriptor === "string" ? { css: descriptor } : (descriptor || {});
+        const node = spec.css ? root.querySelector(spec.css) : root;
+        if (!node) return null;
+        if (spec.attribute) return node.getAttribute(spec.attribute);
+        return (node.innerText || node.textContent || "").trim();
+      };
+      const signature = () => Array.from(document.querySelectorAll(rowSelector)).slice(0, 3).map((node) => node.innerText || node.textContent || "").join("\n");
+      const waitForChange = (before) => new Promise((resolve, reject) => {
+        const started = Date.now();
+        let timer;
+        const observer = new MutationObserver(() => {
+          if (signature() !== before) { clearInterval(timer); observer.disconnect(); resolve(true); }
+          else if (Date.now() - started >= waitTimeout) { clearInterval(timer); observer.disconnect(); reject(new Error("pagination DOM did not change")); }
+        });
+        observer.observe(document.documentElement, { childList: true, subtree: true, characterData: true });
+        timer = setInterval(() => {
+          if (signature() !== before) { clearInterval(timer); observer.disconnect(); resolve(true); }
+          else if (Date.now() - started >= waitTimeout) { clearInterval(timer); observer.disconnect(); reject(new Error("pagination DOM did not change")); }
+        }, 100);
+      });
+      let pages = 0;
+      for (; pages < maxPages; pages += 1) {
+        const pageRows = Array.from(document.querySelectorAll(rowSelector));
+        for (const node of pageRows) {
+          const value = fields ? Object.fromEntries(Object.entries(fields).map(([name, descriptor]) => [name, readValue(node, descriptor)])) : (node.innerText || node.textContent || "").trim();
+          const key = keyField && value && typeof value === "object" ? value[keyField] : JSON.stringify(value);
+          if (!seen.has(String(key))) { seen.add(String(key)); rows.push(value); }
+        }
+        const next = document.querySelector(nextSelector);
+        const disabled = !next || next.disabled || next.getAttribute("aria-disabled") === "true" || next.classList.contains("disabled");
+        if (disabled) break;
+        const before = signature();
+        next.scrollIntoView({ block: "center" });
+        next.click();
+        await waitForChange(before);
+      }
+      return { ok: true, rows, count: rows.length, pages: Math.min(pages + 1, maxPages), truncated: pages >= maxPages };
+    },
+  });
+  return injection?.[0]?.result || { ok: false, rows: [], count: 0, pages: 0 };
 }
 
 async function inspectTab(command) {
@@ -1151,6 +1211,7 @@ async function runCommand(command) {
   }
   await assertCommandAllowed(command);
   if (command.type === "evaluate") return evaluateInTab(command);
+  if (command.type === "paginate") return paginateTab(command);
   if (command.type === "inspect") return inspectTab(command);
   if (command.type === "action") return performAction(command);
   if (command.type === "chatgptPrompt") return sendChatGptPrompt(command);

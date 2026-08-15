@@ -220,10 +220,12 @@ class ExtensionBridgeState:
         self.tabs = {}
         self.commands = {}
         self.results = {}
+        self.pending_commands = {}
         self.claims = {}
         self.events = []
         self.next_event_id = 1
         self.next_command_id = 1
+        self.last_recovery_at = {}
 
     def register(self, client_id, payload):
         now = time.time()
@@ -245,6 +247,48 @@ class ExtensionBridgeState:
                 "lastSeen": now,
             }
             return token
+
+    def _fingerprint_locked(self, client):
+        browser = str(client.get("browser") or "").strip().lower()
+        user_agent = str(client.get("userAgent") or "").strip().lower()
+        tabs = self.tabs.get(client.get("clientId")) or []
+        tab_signature = tuple(sorted((str(tab.get("id")), str(tab.get("url") or "")) for tab in tabs))
+        if browser and user_agent and tab_signature:
+            return f"{browser}|{user_agent}|{tab_signature!r}"
+        return f"client:{client.get('clientId')}"
+
+    def _client_score_locked(self, client, now=None):
+        now = now or time.time()
+        health = self._client_health_locked(client, now)
+        return (
+            int(health["roundTrip"]),
+            int(health["polling"]),
+            int(health["tabsFresh"]),
+            len(client.get("capabilities") or []),
+            client.get("lastSeen", 0),
+        )
+
+    def _active_client_ids_locked(self, now=None):
+        now = now or time.time()
+        groups = {}
+        for client in self.clients.values():
+            groups.setdefault(self._fingerprint_locked(client), []).append(client)
+        active = set()
+        for members in groups.values():
+            eligible = [client for client in members if self._client_health_locked(client, now)["polling"]]
+            candidates = eligible or members
+            active.add(max(candidates, key=lambda client: self._client_score_locked(client, now))["clientId"])
+        return active
+
+    def ensure_client_routable(self, client_id):
+        with self.lock:
+            if client_id not in self.clients:
+                raise RuntimeError(f"Extension client is not registered: {client_id}")
+            active = self._active_client_ids_locked()
+            if client_id not in active:
+                winner = next((item for item in active if self._fingerprint_locked(self.clients[item]) == self._fingerprint_locked(self.clients[client_id])), None)
+                raise RuntimeError(f"Extension client {client_id} is unhealthy or superseded by {winner or 'a healthier instance'}")
+            return True
 
     def authenticate(self, client_id, token):
         with self.lock:
@@ -288,13 +332,16 @@ class ExtensionBridgeState:
             "registered": bool(client.get("lastRegisteredAt") and now - client["lastRegisteredAt"] <= 15),
             "tabsFresh": bool(last_tabs and now - last_tabs <= 10),
             "polling": bool(last_poll and now - last_poll <= 5),
-            "roundTrip": bool(client.get("lastResultAt")),
+            "roundTrip": bool(client.get("lastResultAt") and now - client["lastResultAt"] <= 30),
         }
 
     def all_tabs(self):
         with self.lock:
             rows = []
+            active = self._active_client_ids_locked()
             for client_id, tabs in self.tabs.items():
+                if client_id not in active:
+                    continue
                 for tab in tabs:
                     item = dict(tab)
                     item["clientId"] = client_id
@@ -305,15 +352,20 @@ class ExtensionBridgeState:
         with self.lock:
             if not self.clients:
                 return None
-            return max(self.clients.values(), key=lambda client: client.get("lastSeen", 0)).get("clientId")
+            active = self._active_client_ids_locked()
+            candidates = [client for client in self.clients.values() if client["clientId"] in active]
+            return max(candidates, key=lambda client: self._client_score_locked(client)).get("clientId") if candidates else None
 
     def enqueue(self, client_id, command):
+        self.ensure_client_routable(client_id)
         with self.lock:
             command_id = str(self.next_command_id)
             self.next_command_id += 1
             command = dict(command)
             command["id"] = command_id
+            command["queuedAt"] = time.time()
             self.commands.setdefault(client_id, []).append(command)
+            self.pending_commands[(client_id, command_id)] = {"queuedAt": command["queuedAt"], "type": command.get("type")}
             return command_id
 
     def poll(self, client_id):
@@ -324,7 +376,11 @@ class ExtensionBridgeState:
                 self.clients[client_id]["lastPollAt"] = now
             queue = self.commands.setdefault(client_id, [])
             if queue:
-                return queue.pop(0)
+                command = queue.pop(0)
+                pending = self.pending_commands.get((client_id, command["id"]))
+                if pending:
+                    pending["dispatchedAt"] = now
+                return command
             return None
 
     def complete(self, client_id, command_id, payload):
@@ -334,6 +390,7 @@ class ExtensionBridgeState:
                 self.clients[client_id]["lastSeen"] = now
                 self.clients[client_id]["lastResultAt"] = now
             self.results[(client_id, command_id)] = payload
+            self.pending_commands.pop((client_id, command_id), None)
 
     def diagnostics(self):
         with self.lock:
@@ -348,7 +405,12 @@ class ExtensionBridgeState:
                         "tabCount": len(self.tabs.get(client_id) or []),
                         "queuedCommands": len(self.commands.get(client_id) or []),
                         "pendingResults": sum(1 for key in self.results if key[0] == client_id),
+                        "inFlightCommands": sum(1 for key in self.pending_commands if key[0] == client_id),
                         "health": self._client_health_locked(client, now),
+                        "routing": {
+                            "active": client_id in self._active_client_ids_locked(now),
+                            "fingerprint": self._fingerprint_locked(client),
+                        },
                         "ages": {
                             "registrationSeconds": round(now - client["lastRegisteredAt"], 3) if client.get("lastRegisteredAt") else None,
                             "tabSyncSeconds": round(now - client["lastTabsAt"], 3) if client.get("lastTabsAt") else None,
@@ -413,6 +475,7 @@ class ExtensionBridgeState:
         raise RuntimeError(f"Timed out waiting for browser event: {event_type or 'any'}")
 
     def wait_result(self, client_id, command_id, timeout=10):
+        timeout = max(0.1, min(float(timeout), 300))
         deadline = time.time() + timeout
         while time.time() < deadline:
             with self.lock:
@@ -420,7 +483,24 @@ class ExtensionBridgeState:
                 if key in self.results:
                     return self.results.pop(key)
             time.sleep(0.1)
-        raise RuntimeError(f"Timed out waiting for extension command {command_id}")
+        now = time.time()
+        with self.lock:
+            key = (client_id, command_id)
+            self.pending_commands.pop(key, None)
+            self.results.pop(key, None)
+            queue = self.commands.get(client_id, [])
+            self.commands[client_id] = [command for command in queue if command.get("id") != command_id]
+            client = self.clients.get(client_id) or {}
+            polling = self._client_health_locked(client, now).get("polling") if client else False
+            if polling and now - self.last_recovery_at.get(client_id, 0) >= 30:
+                recovery_id = str(self.next_command_id)
+                self.next_command_id += 1
+                self.commands.setdefault(client_id, []).insert(0, {"id": recovery_id, "type": "reload", "queuedAt": now, "recoveryFor": command_id})
+                self.last_recovery_at[client_id] = now
+        raise RuntimeError(
+            f"EXTENSION_COMMAND_TIMEOUT: command {command_id} produced no result within {timeout:g}s; "
+            f"the stale command was cleared{' and extension recovery was queued' if polling else ''}"
+        )
 
     def _active_claims_locked(self):
         now = time.time()
@@ -429,7 +509,8 @@ class ExtensionBridgeState:
             self.claims.pop(claim_id, None)
         return self.claims
 
-    def claim_tab(self, extension_client_id, tab_id, owner, mode="interactive", ttl=60):
+    def claim_tab(self, extension_client_id, tab_id, owner, mode="interactive", ttl=300):
+        self.ensure_client_routable(extension_client_id)
         ttl = max(10, min(int(ttl), 3600))
         mode = mode if mode in ("readonly", "interactive") else "interactive"
         now = time.time()
@@ -453,16 +534,18 @@ class ExtensionBridgeState:
             claims[claim_id] = claim
             return dict(claim)
 
-    def require_claim(self, claim_id, write=False):
+    def require_claim(self, claim_id, write=False, auto_renew_ttl=300):
         with self.lock:
             claim = self._active_claims_locked().get(claim_id)
             if not claim:
                 raise RuntimeError("Claim is missing or expired")
             if write and claim["mode"] != "interactive":
                 raise RuntimeError("Readonly claim cannot perform write actions")
+            if auto_renew_ttl and claim["expiresAt"] - time.time() < 60:
+                claim["expiresAt"] = time.time() + max(60, min(int(auto_renew_ttl), 3600))
             return dict(claim)
 
-    def renew_claim(self, claim_id, ttl=60):
+    def renew_claim(self, claim_id, ttl=300):
         ttl = max(10, min(int(ttl), 3600))
         with self.lock:
             claim = self._active_claims_locked().get(claim_id)
@@ -1071,11 +1154,11 @@ def handle_tool(name, args):
             tab_id,
             owner=args.get("owner") or "mcp-client",
             mode=args.get("mode", "interactive"),
-            ttl=args.get("ttl", 60),
+            ttl=args.get("ttl", 300),
         )
         return {"claim": claim}
     if name == "browser_takeover_renew_claim":
-        return {"claim": BRIDGE_STATE.renew_claim(args.get("claimId"), args.get("ttl", 60))}
+        return {"claim": BRIDGE_STATE.renew_claim(args.get("claimId"), args.get("ttl", 300))}
     if name == "browser_takeover_release_tab":
         claim_id = args.get("claimId")
         if not claim_id:
@@ -1100,7 +1183,7 @@ def handle_tool(name, args):
             command_id,
             float(args.get("timeout", 10)),
         )
-        BRIDGE_STATE.renew_claim(claim["claimId"], args.get("renewTtl", 60))
+        BRIDGE_STATE.renew_claim(claim["claimId"], args.get("renewTtl", 300))
         return response
     if name == "browser_takeover_extension_batch_snapshot":
         start_extension_bridge()
@@ -1193,7 +1276,7 @@ def handle_tool(name, args):
             command_id,
             float(args.get("timeout", 20)),
         )
-        BRIDGE_STATE.renew_claim(claim["claimId"], args.get("renewTtl", 60))
+        BRIDGE_STATE.renew_claim(claim["claimId"], args.get("renewTtl", 300))
         return response
     if name == "browser_takeover_extension_workflow":
         start_extension_bridge()
@@ -1206,9 +1289,13 @@ def handle_tool(name, args):
         requires_write = any((step.get("action") or {}).get("type") not in readonly_types for step in steps)
         claim = BRIDGE_STATE.require_claim(args.get("claimId"), write=requires_write)
         workflow_started = time.time()
+        task_timeout = max(1, min(float(args.get("taskTimeout", 300)), 3600))
         results = []
         stopped = False
         for index, step in enumerate(steps):
+            if time.time() - workflow_started >= task_timeout:
+                raise RuntimeError(f"WORKFLOW_TIMEOUT: task exceeded {task_timeout:g}s before step {index + 1}")
+            claim = BRIDGE_STATE.require_claim(args.get("claimId"), write=requires_write, auto_renew_ttl=max(300, int(task_timeout)))
             action = step.get("action") or {}
             if not action.get("type"):
                 raise RuntimeError(f"steps[{index}].action.type is required")
@@ -1216,6 +1303,7 @@ def handle_tool(name, args):
             delay = max(0, min(float(step.get("retryDelay", 0.25)), 10))
             step_result = None
             for attempt in range(1, attempts + 1):
+                BRIDGE_STATE.renew_claim(claim["claimId"], max(300, int(task_timeout)))
                 command_id = BRIDGE_STATE.enqueue(
                     claim["extensionClientId"],
                     {"type": "action", "tabId": claim["tabId"], "action": action},
@@ -1250,7 +1338,7 @@ def handle_tool(name, args):
             if not step_result["ok"] and step.get("onError", "stop") != "continue":
                 stopped = True
                 break
-        BRIDGE_STATE.renew_claim(claim["claimId"], args.get("renewTtl", 60))
+        BRIDGE_STATE.renew_claim(claim["claimId"], args.get("renewTtl", 300))
         return {
             "ok": all(result["ok"] for result in results) and len(results) == len(steps),
             "stopped": stopped,
@@ -1335,7 +1423,7 @@ def handle_tool(name, args):
             return prepared
         time.sleep(max(0, min(float(args.get("focusDelay", 0.15)), 2)))
         result = windows_system_input(action, prepared["result"])
-        BRIDGE_STATE.renew_claim(claim["claimId"], args.get("renewTtl", 60))
+        BRIDGE_STATE.renew_claim(claim["claimId"], args.get("renewTtl", 300))
         return {
             "ok": True,
             "result": result,
@@ -1404,6 +1492,27 @@ def handle_tool(name, args):
             {"type": "evaluate", "tabId": tab_id, "expression": expression, "awaitPromise": bool(args.get("awaitPromise", True))},
         )
         return BRIDGE_STATE.wait_result(client_id, command_id, float(args.get("timeout", 10)))
+    if name == "browser_takeover_extension_paginate":
+        start_extension_bridge()
+        claim = BRIDGE_STATE.require_claim(args.get("claimId"), write=True, auto_renew_ttl=300)
+        config = {
+            "rowSelector": args.get("rowSelector"),
+            "nextSelector": args.get("nextSelector"),
+            "fields": args.get("fields"),
+            "keyField": args.get("keyField"),
+            "maxPages": args.get("maxPages", 50),
+            "waitTimeout": args.get("waitTimeout", 10000),
+        }
+        if not config["rowSelector"] or not config["nextSelector"]:
+            raise RuntimeError("rowSelector and nextSelector are required")
+        timeout = max(float(args.get("timeout", 120)), config["maxPages"] * config["waitTimeout"] / 1000 + 5)
+        command_id = BRIDGE_STATE.enqueue(
+            claim["extensionClientId"],
+            {"type": "paginate", "tabId": claim["tabId"], "config": config, "commandTimeout": min(timeout * 1000, 300000)},
+        )
+        response = BRIDGE_STATE.wait_result(claim["extensionClientId"], command_id, min(timeout, 300))
+        BRIDGE_STATE.renew_claim(claim["claimId"], args.get("renewTtl", 300))
+        return response
     if name == "browser_takeover_extension_navigate":
         start_extension_bridge()
         client_id = args.get("clientId")
@@ -1743,7 +1852,7 @@ TOOLS = [
                 "tabId": {"type": ["integer", "string"]},
                 "owner": {"type": "string", "default": "mcp-client"},
                 "mode": {"type": "string", "enum": ["readonly", "interactive"], "default": "interactive"},
-                "ttl": {"type": "integer", "minimum": 10, "maximum": 3600, "default": 60},
+                "ttl": {"type": "integer", "minimum": 10, "maximum": 3600, "default": 300},
             },
         },
     },
@@ -1755,7 +1864,7 @@ TOOLS = [
             "required": ["claimId"],
             "properties": {
                 "claimId": {"type": "string"},
-                "ttl": {"type": "integer", "minimum": 10, "maximum": 3600, "default": 60},
+                "ttl": {"type": "integer", "minimum": 10, "maximum": 3600, "default": 300},
             },
         },
     },
@@ -1836,7 +1945,7 @@ TOOLS = [
                     },
                 },
                 "timeout": {"type": "number", "default": 10},
-                "renewTtl": {"type": "integer", "minimum": 10, "maximum": 3600, "default": 60},
+                "renewTtl": {"type": "integer", "minimum": 10, "maximum": 3600, "default": 300},
             },
         },
     },
@@ -1884,7 +1993,7 @@ TOOLS = [
                 "frameScope": {"type": "string", "enum": ["top", "all"]},
                 "expect": {"type": "object"},
                 "timeout": {"type": "number", "default": 20},
-                "renewTtl": {"type": "integer", "default": 60},
+                "renewTtl": {"type": "integer", "default": 300},
             },
         },
     },
@@ -1914,8 +2023,9 @@ TOOLS = [
                     },
                 },
                 "timeout": {"type": "number", "default": 15},
+                "taskTimeout": {"type": "number", "minimum": 1, "maximum": 3600, "default": 300},
                 "focusDelay": {"type": "number", "minimum": 0, "maximum": 2, "default": 0.15},
-                "renewTtl": {"type": "integer", "default": 60},
+                "renewTtl": {"type": "integer", "default": 300},
             },
         },
     },
@@ -2001,7 +2111,7 @@ TOOLS = [
                     },
                 },
                 "timeout": {"type": "number", "default": 15},
-                "renewTtl": {"type": "integer", "default": 60},
+                "renewTtl": {"type": "integer", "default": 300},
             },
         },
     },
@@ -2067,6 +2177,33 @@ TOOLS = [
                 "expression": {"type": "string"},
                 "awaitPromise": {"type": "boolean", "default": True},
                 "timeout": {"type": "number", "default": 10},
+            },
+        },
+    },
+    {
+        "name": "browser_takeover_extension_paginate",
+        "description": "Traverse a DOM-paginated list inside one claimed tab, wait for each SPA update, deduplicate rows, and return the combined structured result in one call.",
+        "inputSchema": {
+            "type": "object",
+            "required": ["claimId", "rowSelector", "nextSelector"],
+            "properties": {
+                "claimId": {"type": "string"},
+                "rowSelector": {"type": "string"},
+                "nextSelector": {"type": "string"},
+                "fields": {
+                    "type": "object",
+                    "additionalProperties": {
+                        "oneOf": [
+                            {"type": "string"},
+                            {"type": "object", "properties": {"css": {"type": "string"}, "attribute": {"type": "string"}}},
+                        ]
+                    },
+                },
+                "keyField": {"type": "string"},
+                "maxPages": {"type": "integer", "minimum": 1, "maximum": 200, "default": 50},
+                "waitTimeout": {"type": "number", "minimum": 500, "maximum": 30000, "default": 10000},
+                "timeout": {"type": "number", "minimum": 1, "maximum": 300, "default": 120},
+                "renewTtl": {"type": "integer", "minimum": 60, "maximum": 3600, "default": 300},
             },
         },
     },

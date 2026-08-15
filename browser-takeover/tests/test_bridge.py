@@ -98,6 +98,37 @@ class ExtensionBridgeStateTests(unittest.TestCase):
         self.state.claims[claim["claimId"]]["expiresAt"] = time.time() - 1
         self.assertEqual(self.state.list_claims(), [])
 
+    def test_command_timeout_cleans_state_and_queues_recovery(self):
+        self.state.poll("extension-1")
+        command_id = self.state.enqueue("extension-1", {"type": "action", "tabId": 7})
+        with self.assertRaisesRegex(RuntimeError, "EXTENSION_COMMAND_TIMEOUT"):
+            self.state.wait_result("extension-1", command_id, timeout=0.1)
+        self.assertNotIn(("extension-1", command_id), self.state.pending_commands)
+        recovery = self.state.poll("extension-1")
+        self.assertEqual(recovery["type"], "reload")
+        self.assertEqual(recovery["recoveryFor"], command_id)
+
+    def test_duplicate_clients_route_only_to_healthiest_instance(self):
+        fingerprint = {"browser": "edge", "userAgent": "same-browser", "protocolVersion": 2}
+        self.state = bridge.ExtensionBridgeState()
+        self.state.register("weak", {**fingerprint, "capabilities": ["tabs"]})
+        self.state.register("healthy", {**fingerprint, "capabilities": ["tabs", "action", "native-input"]})
+        self.state.update_tabs("weak", [{"id": 1, "url": "https://same.test"}])
+        self.state.update_tabs("healthy", [{"id": 1, "url": "https://same.test"}])
+        self.state.poll("weak")
+        self.state.poll("healthy")
+        self.state.complete("healthy", "probe", {"ok": True})
+        tabs = self.state.all_tabs()
+        self.assertEqual([tab["clientId"] for tab in tabs], ["healthy"])
+        with self.assertRaisesRegex(RuntimeError, "superseded"):
+            self.state.enqueue("weak", {"type": "action"})
+
+    def test_claim_auto_renews_when_near_expiry(self):
+        claim = self.state.claim_tab("extension-1", 7, "owner-a", "interactive", 10)
+        original_expiry = self.state.claims[claim["claimId"]]["expiresAt"]
+        active = self.state.require_claim(claim["claimId"], write=True)
+        self.assertGreater(active["expiresAt"], original_expiry + 200)
+
 
 class BridgeHttpTests(unittest.TestCase):
     def setUp(self):
@@ -250,6 +281,7 @@ class ToolCompatibilityTests(unittest.TestCase):
             "browser_takeover_extension_native_input",
             "browser_takeover_extension_handle_dialog",
             "browser_takeover_extension_advanced_control",
+            "browser_takeover_extension_paginate",
         }
         monitoring = {
             "browser_takeover_monitor_create",
@@ -498,6 +530,8 @@ class ToolCompatibilityTests(unittest.TestCase):
         self.assertIn("AUTOMATION_ENABLED_KEY", background)
         self.assertIn("TRUSTED_HOSTS_KEY", background)
         self.assertIn('command.type === "securityControl"', background)
+        self.assertIn('"paginate"', background)
+        self.assertIn('command.type === "paginate"', background)
         self.assertIn("Page.handleJavaScriptDialog", background)
         self.assertIn("debugger", manifest["permissions"])
         self.assertNotIn("optional_permissions", manifest)
