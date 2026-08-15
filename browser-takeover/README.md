@@ -183,6 +183,22 @@ each client. Only the healthiest instance with the strongest capability set is a
 tabs or receive new commands. Remove duplicate extension cards from `edge://extensions` or
 `chrome://extensions` even though the bridge can isolate them automatically.
 
+Diagnostics now reports `server.instanceId`, `server.pid`, and `server.uptimeSeconds`. A changed
+`instanceId` proves that the MCP process restarted, which also explains an empty in-memory claim
+set. Client health reports `connected` from fresh tab sync plus active polling. `roundTrip` only
+means that a command result arrived within the last 30 seconds; `resultChannel: "idle"` is normal
+when the extension is connected but no recent command was executed.
+
+Browser launch discovery checks PATH, per-user installs, fixed Windows Program Files locations, and
+Windows App Paths registry entries. This keeps `browser_takeover_launch` working when an MCP host
+such as MARVIS starts Python without `PROGRAMFILES` environment variables.
+
+`browser_takeover_extension_handle_dialog` waits briefly for
+`Page.javascriptDialogOpening`, retries handling a detected dialog up to three times, returns
+`DIALOG_NOT_FOUND` or `DIALOG_HANDLE_FAILED` instead of a bare timeout, and renews its claim after
+the operation. Use `waitTimeout` to control the evidence wait independently from the MCP command
+timeout.
+
 ## Two takeover modes
 
 ### Extension bridge: already-open authenticated tabs

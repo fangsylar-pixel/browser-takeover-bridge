@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+- Add PATH, absolute Windows install paths, and registry App Paths fallbacks for Chrome/Edge discovery when MARVIS omits Program Files environment variables.
+- Add MCP process identity and uptime diagnostics, plus explicit `connected` and `resultChannel` states so idle result traffic is not mistaken for disconnection.
+- Make JavaScript dialog handling wait for debugger dialog evidence, retry boundedly, return structured not-found/failed errors, and renew the active claim.
 - Make extension navigation wait for browser completion and optional URL, selector, and text evidence, with redirect and timeout diagnostics.
 - Expand structured snapshots to discover pointer, tabindex, inline-handler, and semantic controls, and return reusable CSS selectors plus discovery evidence.
 - Make SPA pagination return partial results, warnings, and explicit stop reasons when pages repeat or fail to refresh.

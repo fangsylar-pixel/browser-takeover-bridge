@@ -8,6 +8,7 @@ import tempfile
 import unittest
 import urllib.error
 import urllib.request
+from unittest import mock
 from http.server import ThreadingHTTPServer
 from pathlib import Path
 
@@ -39,15 +40,27 @@ class ExtensionBridgeStateTests(unittest.TestCase):
 
     def test_diagnostics_distinguishes_registration_tabs_poll_and_results(self):
         diagnostics = self.state.diagnostics()
+        self.assertEqual(diagnostics["server"]["instanceId"], self.state.instance_id)
+        self.assertGreater(diagnostics["server"]["pid"], 0)
         client = diagnostics["clients"][0]
         self.assertTrue(client["health"]["registered"])
         self.assertTrue(client["health"]["tabsFresh"])
         self.assertFalse(client["health"]["polling"])
+        self.assertEqual(client["health"]["resultChannel"], "unavailable")
         self.state.poll("extension-1")
         self.state.complete("extension-1", "test-command", {"ok": True})
         client = self.state.diagnostics()["clients"][0]
         self.assertTrue(client["health"]["polling"])
         self.assertTrue(client["health"]["roundTrip"])
+        self.assertEqual(client["health"]["resultChannel"], "recent-result")
+
+    def test_polling_client_is_connected_even_when_result_channel_is_idle(self):
+        self.state.poll("extension-1")
+        self.state.clients["extension-1"]["lastResultAt"] = time.time() - 31
+        health = self.state.diagnostics()["clients"][0]["health"]
+        self.assertTrue(health["connected"])
+        self.assertFalse(health["roundTrip"])
+        self.assertEqual(health["resultChannel"], "idle")
 
     def test_event_feed_uses_incremental_cursor(self):
         recorded = self.state.record_events(
@@ -275,6 +288,20 @@ class BridgeHttpTests(unittest.TestCase):
 
 
 class ToolCompatibilityTests(unittest.TestCase):
+    def test_browser_discovery_uses_path_before_environment_candidates(self):
+        with mock.patch.object(bridge.shutil, "which", return_value=str(MODULE_PATH)):
+            self.assertEqual(bridge.find_browser_exe("chrome"), str(MODULE_PATH.resolve()))
+
+    @unittest.skipUnless(bridge.os.name == "nt", "Windows install path fallback")
+    def test_browser_discovery_has_absolute_windows_fallback_without_programfiles(self):
+        def fake_exists(path):
+            normalized = str(path).replace("\\", "/").lower()
+            return normalized.endswith("c:/program files/google/chrome/application/chrome.exe")
+
+        with mock.patch.dict(bridge.os.environ, {}, clear=True), mock.patch.object(bridge.shutil, "which", return_value=None), mock.patch.object(bridge.Path, "exists", autospec=True, side_effect=fake_exists):
+            discovered = bridge.find_browser_exe("chrome")
+        self.assertTrue(discovered.replace("\\", "/").lower().endswith("c:/program files/google/chrome/application/chrome.exe"))
+
     def test_legacy_and_v2_tools_are_both_exposed(self):
         names = {tool["name"] for tool in bridge.TOOLS}
         legacy = {
