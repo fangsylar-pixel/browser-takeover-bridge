@@ -185,9 +185,16 @@ tabs or receive new commands. Remove duplicate extension cards from `edge://exte
 
 Diagnostics now reports `server.instanceId`, `server.pid`, and `server.uptimeSeconds`. A changed
 `instanceId` proves that the MCP process restarted, which also explains an empty in-memory claim
-set. Client health reports `connected` from fresh tab sync plus active polling. `roundTrip` only
+set in older builds. Current builds persist unexpired claims under the local Browser Takeover state
+directory and restore them after a MARVIS MCP process restart. Command routing waits up to three
+seconds for the same extension client to re-register; expired claims are never restored. Client
+health reports `connected` from fresh tab sync plus active polling. `roundTrip` only
 means that a command result arrived within the last 30 seconds; `resultChannel: "idle"` is normal
 when the extension is connected but no recent command was executed.
+
+Native input accepts both concise names (`click`, `wheel`, `drag`, `text`, `key`) and canonical
+names (`nativeClick`, `nativeWheel`, `nativeDrag`, `nativeText`, `nativeKey`). The bridge normalizes
+aliases before dispatch, so MCP clients do not need to learn two incompatible action vocabularies.
 
 Browser launch discovery checks PATH, per-user installs, fixed Windows Program Files locations, and
 Windows App Paths registry entries. This keeps `browser_takeover_launch` working when an MCP host

@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Persist unexpired short-lived claims locally so MARVIS MCP process restarts do not invalidate active workflows, and wait briefly for the extension client to re-register.
+- Accept concise native input aliases (`click`, `wheel`, `drag`, `text`, `key`) alongside the canonical `native*` action names.
 - Add PATH, absolute Windows install paths, and registry App Paths fallbacks for Chrome/Edge discovery when MARVIS omits Program Files environment variables.
 - Add MCP process identity and uptime diagnostics, plus explicit `connected` and `resultChannel` states so idle result traffic is not mistaken for disconnection.
 - Make JavaScript dialog handling wait for debugger dialog evidence, retry boundedly, return structured not-found/failed errors, and renew the active claim.

@@ -81,6 +81,9 @@ Use `health.connected` for current connectivity. Do not treat `roundTrip: false`
 itself; it expires after 30 seconds without a command and is reported as `resultChannel: "idle"`
 while polling remains healthy. Compare `server.instanceId`, PID, and uptime across observations to
 prove an MCP process restart before attributing lost in-memory claims to the browser extension.
+Unexpired claims are persisted and restored across MCP process restarts; routing waits briefly for
+the same extension client to re-register. Re-claim only when the restored claim is expired, its tab
+no longer exists, or the browser itself restarted with a new client/tab identity.
 
 For large DOM-paginated lists, prefer `browser_takeover_extension_paginate` over an agent-side
 page loop. It performs SPA change waits, row deduplication, and structured field extraction within
