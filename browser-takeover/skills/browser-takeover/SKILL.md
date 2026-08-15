@@ -77,6 +77,11 @@ Before diagnosing a connection problem, call `browser_takeover_extension_diagnos
 client reports fresh registration, tab sync, and polling. `roundTrip` becomes true after at least
 one command result is returned.
 
+Use `health.connected` for current connectivity. Do not treat `roundTrip: false` as a disconnect by
+itself; it expires after 30 seconds without a command and is reported as `resultChannel: "idle"`
+while polling remains healthy. Compare `server.instanceId`, PID, and uptime across observations to
+prove an MCP process restart before attributing lost in-memory claims to the browser extension.
+
 For large DOM-paginated lists, prefer `browser_takeover_extension_paginate` over an agent-side
 page loop. It performs SPA change waits, row deduplication, and structured field extraction within
 the tab while the bridge automatically keeps the interactive claim alive.

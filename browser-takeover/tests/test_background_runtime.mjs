@@ -9,12 +9,13 @@ const source = fs.readFileSync(path.join(root, "extension", "background.js"), "u
 const requests = [];
 const listeners = {};
 const badge = {};
+const debuggerListeners = new Set();
 
 const chrome = {
   storage: {
     local: {
       async get() {
-        return { codexBrowserTakeoverClientId: "runtime-test-client" };
+        return { codexBrowserTakeoverClientId: "runtime-test-client", browserTakeoverAdvancedControl: true };
       },
       async set() {},
     },
@@ -60,6 +61,22 @@ const chrome = {
   downloads: {
     async download() { return 99; },
     async search() { return []; },
+  },
+  debugger: {
+    onEvent: {
+      addListener(listener) { debuggerListeners.add(listener); },
+      removeListener(listener) { debuggerListeners.delete(listener); },
+    },
+    attach(target, version, callback) { callback(); },
+    detach(target, callback) { callback(); },
+    sendCommand(target, method, params, callback) {
+      if (method === "Page.enable") {
+        for (const listener of debuggerListeners) {
+          listener(target, "Page.javascriptDialogOpening", { type: "alert", message: "Test dialog", hasBrowserHandler: false });
+        }
+      }
+      callback({});
+    },
   },
   // Intentionally omit chrome.alarms to cover Edge environments where it is unavailable.
 };
@@ -120,6 +137,11 @@ const browserReadyNavigation = await context.navigateTab({
 });
 assert.equal(browserReadyNavigation.ok, true, "navigation without business evidence should finish at browser readiness");
 assert.equal(browserReadyNavigation.evidence.source, "browser-tab");
+
+const dialogResult = await context.handleJavaScriptDialog({ tabId: 1, accept: true, waitTimeout: 0 });
+assert.equal(dialogResult.ok, true, "dialog handler should use debugger dialog evidence");
+assert.equal(dialogResult.dialog.type, "alert");
+assert.equal(debuggerListeners.size, 0, "dialog listener should always be removed");
 
 let response;
 listeners.message({ type: "bridge-status" }, {}, (value) => { response = value; });

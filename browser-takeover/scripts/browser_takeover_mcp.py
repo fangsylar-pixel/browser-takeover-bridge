@@ -10,6 +10,7 @@ import json
 import os
 import random
 import secrets
+import shutil
 import socket
 import ssl
 import struct
@@ -215,6 +216,8 @@ SERVER_NAME = "browser-takeover"
 
 class ExtensionBridgeState:
     def __init__(self):
+        self.instance_id = secrets.token_hex(8)
+        self.started_at = time.time()
         self.lock = threading.Lock()
         self.clients = {}
         self.tabs = {}
@@ -318,6 +321,12 @@ class ExtensionBridgeState:
                 for client in self.clients.values()
             ]
             return {
+                "server": {
+                    "instanceId": self.instance_id,
+                    "pid": os.getpid(),
+                    "startedAt": self.started_at,
+                    "uptimeSeconds": round(now - self.started_at, 3),
+                },
                 "bridge": {"host": BRIDGE_HOST, "port": BRIDGE_PORT},
                 "clients": clients,
                 "tabCount": sum(len(tabs) for tabs in self.tabs.values()),
@@ -328,11 +337,16 @@ class ExtensionBridgeState:
         now = now or time.time()
         last_poll = client.get("lastPollAt")
         last_tabs = client.get("lastTabsAt")
+        result_age = now - client["lastResultAt"] if client.get("lastResultAt") else None
+        polling = bool(last_poll and now - last_poll <= 5)
+        tabs_fresh = bool(last_tabs and now - last_tabs <= 10)
         return {
             "registered": bool(client.get("lastRegisteredAt") and now - client["lastRegisteredAt"] <= 15),
-            "tabsFresh": bool(last_tabs and now - last_tabs <= 10),
-            "polling": bool(last_poll and now - last_poll <= 5),
-            "roundTrip": bool(client.get("lastResultAt") and now - client["lastResultAt"] <= 30),
+            "tabsFresh": tabs_fresh,
+            "polling": polling,
+            "connected": polling and tabs_fresh,
+            "roundTrip": bool(result_age is not None and result_age <= 30),
+            "resultChannel": "recent-result" if result_age is not None and result_age <= 30 else ("idle" if polling else "unavailable"),
         }
 
     def all_tabs(self):
@@ -420,6 +434,13 @@ class ExtensionBridgeState:
                     }
                 )
             return {
+                "server": {
+                    "instanceId": self.instance_id,
+                    "pid": os.getpid(),
+                    "startedAt": self.started_at,
+                    "uptimeSeconds": round(now - self.started_at, 3),
+                    "note": "A changed instanceId proves the MCP process restarted; roundTrip=false alone only means no command result arrived in the last 30 seconds.",
+                },
                 "bridge": {"host": BRIDGE_HOST, "port": BRIDGE_PORT, "protocolVersion": 2},
                 "clients": clients,
                 "claims": [dict(claim) for claim in self._active_claims_locked().values()],
@@ -861,25 +882,55 @@ def browser_processes():
 
 def find_browser_exe(browser):
     local = Path(os.environ.get("LOCALAPPDATA", ""))
+    system_drive = os.environ.get("SystemDrive", "C:")
+    system_root = Path(f"{system_drive}\\")
+    executable_name = {"edge": "msedge.exe", "chrome": "chrome.exe"}.get(browser)
+    if not executable_name:
+        raise RuntimeError("browser must be 'edge' or 'chrome'")
+    for command_name in (executable_name, executable_name.removesuffix(".exe")):
+        resolved = shutil.which(command_name)
+        if resolved:
+            return str(Path(resolved).resolve())
     candidates = []
     if browser == "edge":
         candidates = [
             Path(os.environ.get("PROGRAMFILES(X86)", "")) / "Microsoft/Edge/Application/msedge.exe",
             Path(os.environ.get("PROGRAMFILES", "")) / "Microsoft/Edge/Application/msedge.exe",
             local / "Microsoft/Edge/Application/msedge.exe",
+            system_root / "Program Files/Microsoft/Edge/Application/msedge.exe",
+            system_root / "Program Files (x86)/Microsoft/Edge/Application/msedge.exe",
         ]
     elif browser == "chrome":
         candidates = [
             Path(os.environ.get("PROGRAMFILES", "")) / "Google/Chrome/Application/chrome.exe",
             Path(os.environ.get("PROGRAMFILES(X86)", "")) / "Google/Chrome/Application/chrome.exe",
             local / "Google/Chrome/Application/chrome.exe",
+            system_root / "Program Files/Google/Chrome/Application/chrome.exe",
+            system_root / "Program Files (x86)/Google/Chrome/Application/chrome.exe",
         ]
-    else:
-        raise RuntimeError("browser must be 'edge' or 'chrome'")
     for candidate in candidates:
         if candidate.exists():
             return str(candidate)
-    raise RuntimeError(f"Could not find {browser} executable")
+    if os.name == "nt":
+        try:
+            import winreg
+
+            for hive in (winreg.HKEY_CURRENT_USER, winreg.HKEY_LOCAL_MACHINE):
+                for key_path in (
+                    rf"SOFTWARE\Microsoft\Windows\CurrentVersion\App Paths\{executable_name}",
+                    rf"SOFTWARE\WOW6432Node\Microsoft\Windows\CurrentVersion\App Paths\{executable_name}",
+                ):
+                    try:
+                        with winreg.OpenKey(hive, key_path) as key:
+                            value, _ = winreg.QueryValueEx(key, None)
+                        if value and Path(value).is_file():
+                            return str(Path(value))
+                    except OSError:
+                        continue
+        except (ImportError, OSError):
+            pass
+    checked = ", ".join(str(path) for path in dict.fromkeys(candidates))
+    raise RuntimeError(f"Could not find {browser} executable. Checked PATH, Windows App Paths, and: {checked}")
 
 
 def launch_browser(browser="edge", port=9222, url="about:blank", user_data_dir=None):
@@ -1458,13 +1509,16 @@ def handle_tool(name, args):
                 "tabId": claim["tabId"],
                 "accept": bool(args.get("accept", True)),
                 "promptText": args.get("promptText", ""),
+                "waitTimeout": max(0, min(float(args.get("waitTimeout", 2)), 10)) * 1000,
             },
         )
-        return BRIDGE_STATE.wait_result(
+        response = BRIDGE_STATE.wait_result(
             claim["extensionClientId"],
             command_id,
             float(args.get("timeout", 10)),
         )
+        BRIDGE_STATE.renew_claim(claim["claimId"], args.get("renewTtl", 300))
+        return response
     if name == "browser_takeover_extension_advanced_control":
         start_extension_bridge()
         client_id = args.get("clientId") or BRIDGE_STATE.latest_client_id()
@@ -2162,7 +2216,9 @@ TOOLS = [
                 "claimId": {"type": "string"},
                 "accept": {"type": "boolean", "default": True},
                 "promptText": {"type": "string"},
+                "waitTimeout": {"type": "number", "minimum": 0, "maximum": 10, "default": 2},
                 "timeout": {"type": "number", "default": 10},
+                "renewTtl": {"type": "integer", "minimum": 60, "maximum": 3600, "default": 300},
             },
         },
     },

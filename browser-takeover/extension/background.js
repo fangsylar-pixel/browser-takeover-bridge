@@ -1316,12 +1316,53 @@ async function nativeInput(command) {
 
 async function handleJavaScriptDialog(command) {
   return withDebugger(command.tabId, async (target) => {
-    await debuggerSend(target, "Page.enable");
-    await debuggerSend(target, "Page.handleJavaScriptDialog", {
-      accept: command.accept !== false,
-      promptText: command.promptText || "",
-    });
-    return { ok: true, accepted: command.accept !== false };
+    const waitTimeout = Math.max(0, Math.min(Number(command.waitTimeout ?? 2000), 10000));
+    let dialog = null;
+    let resolveDialog;
+    const observed = new Promise((resolve) => { resolveDialog = resolve; });
+    const listener = (source, method, params) => {
+      if (source.tabId === Number(command.tabId) && method === "Page.javascriptDialogOpening") {
+        dialog = params || {};
+        resolveDialog(dialog);
+      }
+    };
+    chrome.debugger.onEvent.addListener(listener);
+    try {
+      await debuggerSend(target, "Page.enable", {}, 5000);
+      if (!dialog && waitTimeout > 0) {
+        await Promise.race([
+          observed,
+          new Promise((resolve) => setTimeout(resolve, waitTimeout)),
+        ]);
+      }
+      let lastError = null;
+      for (let attempt = 1; attempt <= 3; attempt += 1) {
+        try {
+          await debuggerSend(target, "Page.handleJavaScriptDialog", {
+            accept: command.accept !== false,
+            promptText: command.promptText || "",
+          }, 5000);
+          return {
+            ok: true,
+            accepted: command.accept !== false,
+            attempt,
+            dialog: dialog ? { type: dialog.type, message: dialog.message, hasBrowserHandler: dialog.hasBrowserHandler } : null,
+          };
+        } catch (error) {
+          lastError = String(error?.message || error);
+          if (!/no dialog|not showing|no javascript dialog/i.test(lastError) || attempt === 3) break;
+          await new Promise((resolve) => setTimeout(resolve, 150));
+        }
+      }
+      return {
+        ok: false,
+        code: dialog ? "DIALOG_HANDLE_FAILED" : "DIALOG_NOT_FOUND",
+        error: dialog ? `JavaScript dialog could not be handled: ${lastError}` : "No JavaScript dialog was detected before the wait timeout",
+        waitTimeout,
+      };
+    } finally {
+      chrome.debugger.onEvent.removeListener(listener);
+    }
   });
 }
 
