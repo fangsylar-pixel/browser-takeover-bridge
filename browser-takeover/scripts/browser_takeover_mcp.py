@@ -31,6 +31,19 @@ if str(SCRIPT_DIR) not in sys.path:
 from webpage_monitor import MonitorStore
 
 
+def normalize_native_action(action):
+    normalized = dict(action or {})
+    aliases = {
+        "click": "nativeClick",
+        "wheel": "nativeWheel",
+        "drag": "nativeDrag",
+        "text": "nativeText",
+        "key": "nativeKey",
+    }
+    normalized["type"] = aliases.get(normalized.get("type"), normalized.get("type"))
+    return normalized
+
+
 def windows_system_input(action, viewport):
     if os.name != "nt":
         raise RuntimeError("System input is currently implemented on Windows only")
@@ -215,9 +228,10 @@ SERVER_NAME = "browser-takeover"
 
 
 class ExtensionBridgeState:
-    def __init__(self):
+    def __init__(self, claim_store_path=None):
         self.instance_id = secrets.token_hex(8)
         self.started_at = time.time()
+        self.claim_store_path = Path(claim_store_path) if claim_store_path else None
         self.lock = threading.Lock()
         self.clients = {}
         self.tabs = {}
@@ -229,6 +243,33 @@ class ExtensionBridgeState:
         self.next_event_id = 1
         self.next_command_id = 1
         self.last_recovery_at = {}
+        self._load_claims()
+
+    def _load_claims(self):
+        if not self.claim_store_path or not self.claim_store_path.is_file():
+            return
+        try:
+            payload = json.loads(self.claim_store_path.read_text(encoding="utf-8"))
+            now = time.time()
+            restored = payload.get("claims") if isinstance(payload, dict) else []
+            for claim in restored or []:
+                if not isinstance(claim, dict) or not claim.get("claimId") or float(claim.get("expiresAt", 0)) <= now:
+                    continue
+                self.claims[claim["claimId"]] = claim
+        except (OSError, ValueError, TypeError):
+            self.claims = {}
+
+    def _persist_claims_locked(self):
+        if not self.claim_store_path:
+            return
+        try:
+            self.claim_store_path.parent.mkdir(parents=True, exist_ok=True)
+            temporary = self.claim_store_path.with_suffix(self.claim_store_path.suffix + ".tmp")
+            payload = {"version": 1, "savedAt": time.time(), "claims": list(self.claims.values())}
+            temporary.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
+            temporary.replace(self.claim_store_path)
+        except OSError:
+            pass
 
     def register(self, client_id, payload):
         now = time.time()
@@ -283,10 +324,17 @@ class ExtensionBridgeState:
             active.add(max(candidates, key=lambda client: self._client_score_locked(client, now))["clientId"])
         return active
 
-    def ensure_client_routable(self, client_id):
+    def ensure_client_routable(self, client_id, reconnect_wait=3):
+        deadline = time.time() + max(0, float(reconnect_wait))
+        while True:
+            with self.lock:
+                present = client_id in self.clients
+            if present or time.time() >= deadline:
+                break
+            time.sleep(0.05)
         with self.lock:
             if client_id not in self.clients:
-                raise RuntimeError(f"Extension client is not registered: {client_id}")
+                raise RuntimeError(f"Extension client is not registered after waiting {max(0, float(reconnect_wait)):g}s: {client_id}")
             active = self._active_client_ids_locked()
             if client_id not in active:
                 winner = next((item for item in active if self._fingerprint_locked(self.clients[item]) == self._fingerprint_locked(self.clients[client_id])), None)
@@ -324,6 +372,7 @@ class ExtensionBridgeState:
                 "server": {
                     "instanceId": self.instance_id,
                     "pid": os.getpid(),
+                    "parentPid": os.getppid(),
                     "startedAt": self.started_at,
                     "uptimeSeconds": round(now - self.started_at, 3),
                 },
@@ -437,6 +486,7 @@ class ExtensionBridgeState:
                 "server": {
                     "instanceId": self.instance_id,
                     "pid": os.getpid(),
+                    "parentPid": os.getppid(),
                     "startedAt": self.started_at,
                     "uptimeSeconds": round(now - self.started_at, 3),
                     "note": "A changed instanceId proves the MCP process restarted; roundTrip=false alone only means no command result arrived in the last 30 seconds.",
@@ -528,6 +578,8 @@ class ExtensionBridgeState:
         expired = [claim_id for claim_id, claim in self.claims.items() if claim["expiresAt"] <= now]
         for claim_id in expired:
             self.claims.pop(claim_id, None)
+        if expired:
+            self._persist_claims_locked()
         return self.claims
 
     def claim_tab(self, extension_client_id, tab_id, owner, mode="interactive", ttl=300):
@@ -553,6 +605,7 @@ class ExtensionBridgeState:
                 "expiresAt": now + ttl,
             }
             claims[claim_id] = claim
+            self._persist_claims_locked()
             return dict(claim)
 
     def require_claim(self, claim_id, write=False, auto_renew_ttl=300):
@@ -564,6 +617,7 @@ class ExtensionBridgeState:
                 raise RuntimeError("Readonly claim cannot perform write actions")
             if auto_renew_ttl and claim["expiresAt"] - time.time() < 60:
                 claim["expiresAt"] = time.time() + max(60, min(int(auto_renew_ttl), 3600))
+                self._persist_claims_locked()
             return dict(claim)
 
     def renew_claim(self, claim_id, ttl=300):
@@ -573,18 +627,23 @@ class ExtensionBridgeState:
             if not claim:
                 raise RuntimeError("Claim is missing or expired")
             claim["expiresAt"] = time.time() + ttl
+            self._persist_claims_locked()
             return dict(claim)
 
     def release_claim(self, claim_id):
         with self.lock:
-            return self.claims.pop(claim_id, None)
+            released = self.claims.pop(claim_id, None)
+            if released:
+                self._persist_claims_locked()
+            return released
 
     def list_claims(self):
         with self.lock:
             return [dict(claim) for claim in self._active_claims_locked().values()]
 
 
-BRIDGE_STATE = ExtensionBridgeState()
+STATE_ROOT = Path(os.environ.get("BROWSER_TAKEOVER_STATE_DIR") or (Path(os.environ.get("LOCALAPPDATA", Path.home())) / "BrowserTakeover"))
+BRIDGE_STATE = ExtensionBridgeState(STATE_ROOT / "claims.json")
 BRIDGE_SERVER = None
 MONITOR_STORE = MonitorStore()
 STDIO_FRAMING = "content-length"
@@ -1477,9 +1536,9 @@ def handle_tool(name, args):
     if name == "browser_takeover_extension_native_input":
         start_extension_bridge()
         claim = BRIDGE_STATE.require_claim(args.get("claimId"), write=True)
-        action = args.get("action") or {}
+        action = normalize_native_action(args.get("action"))
         if action.get("type") not in {"nativeClick", "nativeWheel", "nativeDrag", "nativeText", "nativeKey"}:
-            raise RuntimeError("Unsupported native input action type")
+            raise RuntimeError("Unsupported native input action type; use click/nativeClick, wheel/nativeWheel, drag/nativeDrag, text/nativeText, or key/nativeKey")
         command_id = BRIDGE_STATE.enqueue(
             claim["extensionClientId"],
             {"type": "prepareSystemInput", "tabId": claim["tabId"]},
@@ -2177,7 +2236,7 @@ TOOLS = [
                     "type": "object",
                     "required": ["type"],
                     "properties": {
-                        "type": {"type": "string", "enum": ["nativeClick", "nativeWheel", "nativeDrag", "nativeText", "nativeKey"]},
+                        "type": {"type": "string", "enum": ["click", "wheel", "drag", "text", "key", "nativeClick", "nativeWheel", "nativeDrag", "nativeText", "nativeKey"]},
                         "x": {"type": "number"},
                         "y": {"type": "number"},
                         "deltaX": {"type": "number"},

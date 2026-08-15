@@ -108,6 +108,21 @@ class ExtensionBridgeStateTests(unittest.TestCase):
         with self.assertRaisesRegex(RuntimeError, "missing or expired"):
             self.state.require_claim(claim["claimId"])
 
+    def test_unexpired_claim_survives_mcp_state_restart(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            store = Path(temp_dir) / "claims.json"
+            first = bridge.ExtensionBridgeState(store)
+            first.register("persistent-extension", {"protocolVersion": 2})
+            first.update_tabs("persistent-extension", [{"id": 91, "url": "https://example.test"}])
+            claim = first.claim_tab("persistent-extension", 91, "long-workflow", "interactive", 300)
+
+            restarted = bridge.ExtensionBridgeState(store)
+            restored = restarted.require_claim(claim["claimId"], write=True)
+            self.assertEqual(restored["owner"], "long-workflow")
+            self.assertEqual(restored["tabId"], 91)
+            restarted.release_claim(claim["claimId"])
+            self.assertEqual(bridge.ExtensionBridgeState(store).list_claims(), [])
+
     def test_expired_claim_is_cleaned_up(self):
         claim = self.state.claim_tab("extension-1", 7, "owner-a", "interactive", 10)
         self.state.claims[claim["claimId"]]["expiresAt"] = time.time() - 1
@@ -288,6 +303,17 @@ class BridgeHttpTests(unittest.TestCase):
 
 
 class ToolCompatibilityTests(unittest.TestCase):
+    def test_native_input_accepts_short_aliases(self):
+        expected = {
+            "click": "nativeClick",
+            "wheel": "nativeWheel",
+            "drag": "nativeDrag",
+            "text": "nativeText",
+            "key": "nativeKey",
+        }
+        for alias, canonical in expected.items():
+            self.assertEqual(bridge.normalize_native_action({"type": alias})["type"], canonical)
+
     def test_browser_discovery_uses_path_before_environment_candidates(self):
         with mock.patch.object(bridge.shutil, "which", return_value=str(MODULE_PATH)):
             self.assertEqual(bridge.find_browser_exe("chrome"), str(MODULE_PATH.resolve()))
