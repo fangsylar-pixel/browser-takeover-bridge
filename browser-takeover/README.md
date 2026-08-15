@@ -120,6 +120,32 @@ Pagination responses include `stopReason`, `warnings`, and rows collected before
 timeout. By default, a stalled transition returns partial data instead of discarding a long
 extraction. Set `continueOnTimeout` to `false` for strict all-or-nothing behavior.
 
+For infinite-scroll or virtualized lists, set `mode` to `scroll` and omit `nextSelector`:
+
+```json
+{
+  "claimId": "claim_...",
+  "mode": "scroll",
+  "rowSelector": ".work-card",
+  "scrollContainer": ".virtual-list",
+  "scrollStep": 900,
+  "scrollWaitTimeout": 2000,
+  "stableRounds": 2,
+  "fields": {
+    "title": [".title", ".work-title"],
+    "metricLabel": {"textPattern": "(完播率|平均播放占比)\\s*([0-9.]+%)", "group": 1},
+    "metricValue": {"textPattern": "(完播率|平均播放占比)\\s*([0-9.]+%)", "group": 2}
+  },
+  "keyField": "title",
+  "maxPages": 100
+}
+```
+
+The collector stops after the configured number of stable rounds without new DOM content. Field
+descriptors may be candidate arrays, may contain multiple CSS selectors, and may extract a regex
+group. This preserves raw site differences while allowing one schema to tolerate alternate labels
+or layouts.
+
 ### Verified SPA navigation
 
 `browser_takeover_extension_navigate` waits for tab completion and can require business-level

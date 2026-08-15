@@ -84,9 +84,15 @@ the tab while the bridge automatically keeps the interactive claim alive.
 Pagination requires an interactive claim because it clicks the next-page control. Provide
 `rowSelector`, `nextSelector`, and optional `fields`, `keyField`, `maxPages`, and `waitTimeout`.
 Inspect `stopReason` and `warnings`; partial rows are retained after a page-change timeout unless
-`continueOnTimeout` is false. Do not use it for infinite-scroll pages. If a command returns `EXTENSION_COMMAND_TIMEOUT`, inspect
+`continueOnTimeout` is false. If a command returns `EXTENSION_COMMAND_TIMEOUT`, inspect
 diagnostics after the automatic recovery attempt before retrying; do not immediately start an
 unbounded retry loop.
+
+For infinite-scroll pages, use the same tool with `mode: "scroll"`, omit `nextSelector`, and provide
+an optional `scrollContainer`, `scrollStep`, `scrollWaitTimeout`, and `stableRounds`. Field mappings
+may use candidate descriptor arrays or multiple CSS selectors; use `textPattern` and `group` when a
+site renders alternate labels for the same reporting slot. Preserve the original label when the
+metrics are semantically different.
 
 Browser-level native input, true full-page screenshots, and JavaScript dialog handling require the
 optional advanced control permission. The user enables it once from the extension popup. Do not
