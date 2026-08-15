@@ -317,6 +317,13 @@ class ToolCompatibilityTests(unittest.TestCase):
         self.assertTrue(v2.issubset(names))
         self.assertTrue(monitoring.issubset(names))
 
+    def test_commercial_navigation_and_pagination_options_are_exposed(self):
+        tools = {tool["name"]: tool for tool in bridge.TOOLS}
+        navigation = tools["browser_takeover_extension_navigate"]["inputSchema"]["properties"]
+        self.assertTrue({"waitTimeout", "settleMs", "selector", "text", "urlPattern"}.issubset(navigation))
+        pagination = tools["browser_takeover_extension_paginate"]["inputSchema"]["properties"]
+        self.assertIn("continueOnTimeout", pagination)
+
     def test_monitor_check_reads_claimed_tab_and_detects_change(self):
         original_state = bridge.BRIDGE_STATE
         original_start = bridge.start_extension_bridge

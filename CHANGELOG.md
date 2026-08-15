@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+- Make extension navigation wait for browser completion and optional URL, selector, and text evidence, with redirect and timeout diagnostics.
+- Expand structured snapshots to discover pointer, tabindex, inline-handler, and semantic controls, and return reusable CSS selectors plus discovery evidence.
+- Make SPA pagination return partial results, warnings, and explicit stop reasons when pages repeat or fail to refresh.
 - Restore automatic stdio framing detection so MARVIS newline-delimited JSON and Content-Length MCP clients both initialize correctly.
 - Fail stalled extension commands deterministically, clear their pending state, and queue a rate-limited extension reload for recovery.
 - Arbitrate duplicate extension instances by browser/tab fingerprint, health, and capabilities so unhealthy copies are excluded from routing.

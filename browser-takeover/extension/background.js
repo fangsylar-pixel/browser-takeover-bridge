@@ -227,8 +227,11 @@ async function paginateTab(command) {
       const waitTimeout = Math.max(500, Math.min(Number(options.waitTimeout || 10000), 30000));
       const fields = options.fields && typeof options.fields === "object" ? options.fields : null;
       const keyField = String(options.keyField || "");
+      const continueOnTimeout = options.continueOnTimeout !== false;
       const rows = [];
       const seen = new Set();
+      const pageSignatures = new Set();
+      const warnings = [];
       const readValue = (root, descriptor) => {
         const spec = typeof descriptor === "string" ? { css: descriptor } : (descriptor || {});
         const node = spec.css ? root.querySelector(spec.css) : root;
@@ -251,8 +254,16 @@ async function paginateTab(command) {
         }, 100);
       });
       let pages = 0;
+      let stopReason = "max-pages";
       for (; pages < maxPages; pages += 1) {
         const pageRows = Array.from(document.querySelectorAll(rowSelector));
+        const currentSignature = signature();
+        if (pageSignatures.has(currentSignature)) {
+          stopReason = "repeated-page";
+          warnings.push(`Stopped before page ${pages + 1}: repeated page content`);
+          break;
+        }
+        pageSignatures.add(currentSignature);
         for (const node of pageRows) {
           const value = fields ? Object.fromEntries(Object.entries(fields).map(([name, descriptor]) => [name, readValue(node, descriptor)])) : (node.innerText || node.textContent || "").trim();
           const key = keyField && value && typeof value === "object" ? value[keyField] : JSON.stringify(value);
@@ -260,13 +271,29 @@ async function paginateTab(command) {
         }
         const next = document.querySelector(nextSelector);
         const disabled = !next || next.disabled || next.getAttribute("aria-disabled") === "true" || next.classList.contains("disabled");
-        if (disabled) break;
-        const before = signature();
+        if (disabled) { stopReason = next ? "next-disabled" : "next-missing"; break; }
+        const before = currentSignature;
         next.scrollIntoView({ block: "center" });
         next.click();
-        await waitForChange(before);
+        try {
+          await waitForChange(before);
+        } catch (error) {
+          stopReason = "page-change-timeout";
+          warnings.push(String(error?.message || error));
+          if (!continueOnTimeout) throw error;
+          break;
+        }
       }
-      return { ok: true, rows, count: rows.length, pages: Math.min(pages + 1, maxPages), truncated: pages >= maxPages };
+      const completedPages = pageSignatures.size;
+      return {
+        ok: true,
+        rows,
+        count: rows.length,
+        pages: completedPages,
+        truncated: pages >= maxPages || stopReason === "page-change-timeout",
+        stopReason,
+        warnings,
+      };
     },
   });
   return injection?.[0]?.result || { ok: false, rows: [], count: 0, pages: 0 };
@@ -357,6 +384,35 @@ async function performAction(command) {
         const style = getComputedStyle(element);
         const rect = element.getBoundingClientRect();
         return style.visibility !== "hidden" && style.display !== "none" && rect.width > 0 && rect.height > 0;
+      };
+      const controlSelector = "button, a, input, textarea, select, [role], [contenteditable='true'], [onclick], [tabindex]";
+      const looksInteractive = (element) => {
+        if (!element || !visible(element)) return false;
+        if (element.matches("button, a, input, textarea, select, [role], [contenteditable='true'], [onclick]")) return true;
+        const tabIndex = element.getAttribute("tabindex");
+        if (tabIndex !== null && Number(tabIndex) >= 0) return true;
+        const style = getComputedStyle(element);
+        const text = clean(element.getAttribute("aria-label") || element.innerText || element.textContent);
+        return style.cursor === "pointer" && text.length > 0 && text.length <= 200;
+      };
+      const stableSelector = (element) => {
+        if (element.id) return `#${CSS.escape(element.id)}`;
+        for (const attribute of ["data-testid", "data-id", "name"]) {
+          const value = element.getAttribute(attribute);
+          if (value) return `${element.tagName.toLowerCase()}[${attribute}="${CSS.escape(value)}"]`;
+        }
+        const parts = [];
+        let node = element;
+        while (node && node !== document.body && parts.length < 5) {
+          let part = node.tagName.toLowerCase();
+          const classes = [...node.classList].filter((name) => /^[a-zA-Z_-][\w-]*$/.test(name)).slice(0, 2);
+          if (classes.length) part += classes.map((name) => `.${CSS.escape(name)}`).join("");
+          const siblings = node.parentElement ? [...node.parentElement.children].filter((item) => item.tagName === node.tagName) : [];
+          if (siblings.length > 1) part += `:nth-of-type(${siblings.indexOf(node) + 1})`;
+          parts.unshift(part);
+          node = node.parentElement;
+        }
+        return parts.join(" > ");
       };
       const candidates = (selector) => {
         if (!selector) return [];
@@ -531,21 +587,29 @@ async function performAction(command) {
           behavior: request.behavior === "smooth" ? "smooth" : "instant",
         });
       } else if (request.type === "snapshot") {
+        const explicit = [...document.querySelectorAll(controlSelector)];
+        const pointerCandidates = deepElements().filter((item) => {
+          if (!["DIV", "SPAN", "LI"].includes(item.tagName)) return false;
+          return getComputedStyle(item).cursor === "pointer";
+        });
         value = {
           title: document.title,
           href: location.href,
           text: clean(document.body?.innerText || "").slice(0, Number(request.maxText || 20000)),
-          controls: [...document.querySelectorAll("button, a, input, textarea, select, [role], [contenteditable='true']")]
+          controls: explicit.concat(pointerCandidates)
             .concat(deepElements().filter((item) => item.shadowRoot).flatMap((item) =>
-              [...item.shadowRoot.querySelectorAll("button, a, input, textarea, select, [role], [contenteditable='true']")]
+              [...item.shadowRoot.querySelectorAll(controlSelector)]
             ))
-            .filter(visible)
+            .filter((item, index, all) => all.indexOf(item) === index && looksInteractive(item))
             .slice(0, Number(request.maxControls || 500))
             .map((item, itemIndex) => ({
               index: itemIndex,
               tag: item.tagName.toLowerCase(),
               role: item.getAttribute("role"),
               name: clean(item.getAttribute("aria-label") || item.getAttribute("placeholder") || item.innerText || item.value).slice(0, 200),
+              selector: stableSelector(item),
+              href: item.href || null,
+              interactiveBy: item.matches("button, a, input, textarea, select") ? "native" : item.getAttribute("role") ? "role" : item.onclick || item.hasAttribute("onclick") ? "handler" : item.hasAttribute("tabindex") ? "tabindex" : "pointer",
               disabled: Boolean(item.disabled || item.getAttribute("aria-disabled") === "true"),
             })),
         };
@@ -915,12 +979,55 @@ async function pasteImageDataIntoTab(command) {
 }
 
 async function navigateTab(command) {
-  const tab = await chrome.tabs.update(Number(command.tabId), { url: command.url });
+  const tabId = Number(command.tabId);
+  const options = command.options || {};
+  const timeout = Math.max(1000, Math.min(Number(options.waitTimeout || 30000), 120000));
+  const settleMs = Math.max(0, Math.min(Number(options.settleMs ?? 500), 10000));
+  if (options.urlPattern) new RegExp(options.urlPattern);
+  const started = Date.now();
+  await chrome.tabs.update(tabId, { url: command.url });
+  let tab;
+  let evidence = null;
+  let lastError = null;
+  while (Date.now() - started < timeout) {
+    tab = await chrome.tabs.get(tabId);
+    if (tab.status === "complete") {
+      try {
+        const [injection] = await chrome.scripting.executeScript({
+          target: { tabId },
+          world: "ISOLATED",
+          args: [options],
+          func: (expect) => {
+            const bodyText = (document.body?.innerText || "").replace(/\s+/g, " ").trim();
+            const selectorMatched = !expect.selector || Boolean(document.querySelector(expect.selector));
+            const textMatched = !expect.text || bodyText.includes(String(expect.text));
+            const urlMatched = !expect.urlPattern || new RegExp(expect.urlPattern).test(location.href);
+            return { selectorMatched, textMatched, urlMatched, href: location.href, title: document.title, readyState: document.readyState };
+          },
+        });
+        evidence = injection?.result || null;
+        if (evidence?.selectorMatched && evidence?.textMatched && evidence?.urlMatched) break;
+      } catch (error) {
+        lastError = String(error?.message || error);
+      }
+    }
+    await new Promise((resolve) => setTimeout(resolve, 100));
+  }
+  tab = await chrome.tabs.get(tabId);
+  const ready = Boolean(tab.status === "complete" && evidence?.selectorMatched && evidence?.textMatched && evidence?.urlMatched);
+  if (ready && settleMs) await new Promise((resolve) => setTimeout(resolve, settleMs));
   return {
     id: tab.id,
     title: tab.title || "",
     url: tab.url || "",
     status: tab.status || "",
+    ok: ready,
+    timedOut: !ready,
+    redirected: Boolean(tab.url && tab.url !== command.url),
+    expectedUrl: command.url,
+    durationMs: Date.now() - started,
+    evidence,
+    error: ready ? null : (lastError || "Navigation readiness conditions were not met before timeout"),
   };
 }
 

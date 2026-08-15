@@ -23,12 +23,25 @@ const chrome = {
     async query() {
       return [{ id: 1, windowId: 1, active: true, title: "Test", url: "https://example.test", status: "complete" }];
     },
+    async update(id, changes) {
+      return { id, windowId: 1, title: "Ready", url: changes.url, status: "loading" };
+    },
+    async get(id) {
+      return { id, windowId: 1, title: "Ready", url: "https://example.test/ready", status: "complete" };
+    },
     onCreated: { addListener() {} },
     onUpdated: { addListener() {} },
     onRemoved: { addListener() {} },
     onActivated: { addListener() {} },
   },
-  scripting: { async executeScript() { return [{ result: null }]; } },
+  scripting: {
+    async executeScript(details) {
+      if (details.args?.[0]?.urlPattern) {
+        return [{ result: { selectorMatched: true, textMatched: true, urlMatched: true, href: "https://example.test/ready", title: "Ready", readyState: "complete" } }];
+      }
+      return [{ result: null }];
+    },
+  },
   runtime: {
     onInstalled: { addListener() {} },
     onStartup: { addListener() {} },
@@ -90,6 +103,15 @@ assert.ok(requests.some((request) => request.url.endsWith("/extension/tabs")), "
 assert.ok(requests.some((request) => request.url.includes("/extension/poll")), "extension should poll commands");
 assert.equal(typeof listeners.message, "function", "status message listener should be installed");
 assert.equal(badge.text, "ON", "connected badge should be visible");
+
+const navigation = await context.navigateTab({
+  tabId: 1,
+  url: "https://example.test/ready",
+  options: { waitTimeout: 1000, settleMs: 0, urlPattern: "/ready$", selector: "main", text: "Loaded" },
+});
+assert.equal(navigation.ok, true, "navigation should wait for readiness evidence");
+assert.equal(navigation.timedOut, false);
+assert.equal(navigation.evidence.selectorMatched, true);
 
 let response;
 listeners.message({ type: "bridge-status" }, {}, (value) => { response = value; });
