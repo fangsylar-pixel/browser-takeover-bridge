@@ -9,6 +9,7 @@ import hashlib
 import json
 import os
 import random
+import re
 import secrets
 import shutil
 import socket
@@ -44,6 +45,31 @@ def normalize_native_action(action):
     return normalized
 
 
+def normalize_structured_action(action):
+    normalized = dict(action or {})
+    if normalized.get("type") == "type":
+        normalized["type"] = "fill"
+        if "value" not in normalized and "text" in normalized:
+            normalized["value"] = normalized["text"]
+    return normalized
+
+
+def choose_browser_window(foreground, foreground_is_chromium, foreground_matches_title, matched_windows, chromium_windows, has_title):
+    if foreground_is_chromium and (not has_title or foreground_matches_title or not matched_windows):
+        return foreground
+    if matched_windows:
+        return matched_windows[0][0]
+    if len(chromium_windows) == 1:
+        return chromium_windows[0][0]
+    return 0
+
+
+def dialog_system_fallback_reason(response):
+    response = response or {}
+    message = str(response.get("error") or (response.get("result") or {}).get("error") or "")
+    return message if re.search(r"timed out|DIALOG_HANDLE_FAILED|debugger attach|Page\.enable", message, re.IGNORECASE) else None
+
+
 def windows_system_input(action, viewport):
     if os.name != "nt":
         raise RuntimeError("System input is currently implemented on Windows only")
@@ -62,7 +88,13 @@ def windows_system_input(action, viewport):
 
     window_title = str(viewport.get("title") or "")
     matched_windows = []
+    chromium_windows = []
     WNDENUMPROC = ctypes.WINFUNCTYPE(ctypes.c_bool, ctypes.c_void_p, ctypes.c_void_p)
+
+    def window_class(hwnd):
+        buffer = ctypes.create_unicode_buffer(256)
+        user32.GetClassNameW(hwnd, buffer, len(buffer))
+        return buffer.value
 
     def enum_window(hwnd, _lparam):
         if not user32.IsWindowVisible(hwnd):
@@ -73,12 +105,24 @@ def windows_system_input(action, viewport):
         buffer = ctypes.create_unicode_buffer(length + 1)
         user32.GetWindowTextW(hwnd, buffer, length + 1)
         title = buffer.value
+        if window_class(hwnd).startswith("Chrome_WidgetWin"):
+            chromium_windows.append((hwnd, title))
         if window_title and window_title in title:
             matched_windows.append((hwnd, title))
         return True
 
     user32.EnumWindows(WNDENUMPROC(enum_window), 0)
-    root_hwnd = matched_windows[0][0] if matched_windows else 0
+    foreground = user32.GetForegroundWindow()
+    foreground_is_chromium = bool(foreground and window_class(foreground).startswith("Chrome_WidgetWin"))
+    foreground_matches_title = any(hwnd == foreground for hwnd, _ in matched_windows)
+    root_hwnd = choose_browser_window(
+        foreground,
+        foreground_is_chromium,
+        foreground_matches_title,
+        matched_windows,
+        chromium_windows,
+        bool(window_title),
+    )
     if root_hwnd:
         user32.ShowWindow(root_hwnd, 9)
         foreground = user32.GetForegroundWindow()
@@ -95,7 +139,8 @@ def windows_system_input(action, viewport):
             user32.AttachThreadInput(current_thread, foreground_thread, False)
         time.sleep(0.1)
     else:
-        raise RuntimeError(f"Could not find browser window for page title: {window_title!r}")
+        candidates = [title for _, title in chromium_windows[:5]]
+        raise RuntimeError(f"Could not find focused Chromium window for page title {window_title!r}; visible Chromium titles: {candidates}")
 
     def move_cursor(x, y):
         user32.SetCursorPos(x, y)
@@ -490,6 +535,7 @@ class ExtensionBridgeState:
                     "startedAt": self.started_at,
                     "uptimeSeconds": round(now - self.started_at, 3),
                     "note": "A changed instanceId proves the MCP process restarted; roundTrip=false alone only means no command result arrived in the last 30 seconds.",
+                    "previousSession": globals().get("PREVIOUS_RUNTIME_RECORD"),
                 },
                 "bridge": {"host": BRIDGE_HOST, "port": BRIDGE_PORT, "protocolVersion": 2},
                 "clients": clients,
@@ -644,6 +690,39 @@ class ExtensionBridgeState:
 
 STATE_ROOT = Path(os.environ.get("BROWSER_TAKEOVER_STATE_DIR") or (Path(os.environ.get("LOCALAPPDATA", Path.home())) / "BrowserTakeover"))
 BRIDGE_STATE = ExtensionBridgeState(STATE_ROOT / "claims.json")
+RUNTIME_JOURNAL_PATH = STATE_ROOT / "runtime-journal.json"
+
+
+def read_runtime_journal():
+    try:
+        payload = json.loads(RUNTIME_JOURNAL_PATH.read_text(encoding="utf-8"))
+        return payload if isinstance(payload, dict) else None
+    except (OSError, ValueError, TypeError):
+        return None
+
+
+def write_runtime_journal(state, method=None, tool=None, error_message=None):
+    try:
+        RUNTIME_JOURNAL_PATH.parent.mkdir(parents=True, exist_ok=True)
+        record = {
+            "instanceId": BRIDGE_STATE.instance_id,
+            "pid": os.getpid(),
+            "parentPid": os.getppid(),
+            "startedAt": BRIDGE_STATE.started_at,
+            "updatedAt": time.time(),
+            "state": state,
+            "method": method,
+            "tool": tool,
+            "error": str(error_message)[:1000] if error_message else None,
+        }
+        temporary = RUNTIME_JOURNAL_PATH.with_suffix(".json.tmp")
+        temporary.write_text(json.dumps(record, ensure_ascii=False, indent=2), encoding="utf-8")
+        temporary.replace(RUNTIME_JOURNAL_PATH)
+    except OSError:
+        pass
+
+
+PREVIOUS_RUNTIME_RECORD = read_runtime_journal()
 BRIDGE_SERVER = None
 MONITOR_STORE = MonitorStore()
 STDIO_FRAMING = "content-length"
@@ -1296,11 +1375,11 @@ def handle_tool(name, args):
         return {"released": bool(claim), "claim": claim}
     if name == "browser_takeover_extension_action":
         start_extension_bridge()
+        action = normalize_structured_action(args.get("action"))
         claim = BRIDGE_STATE.require_claim(
             args.get("claimId"),
-            write=(args.get("action") or {}).get("type") not in ("read", "snapshot", "wait"),
+            write=action.get("type") not in ("read", "snapshot", "wait"),
         )
-        action = args.get("action") or {}
         if not action.get("type"):
             raise RuntimeError("action.type is required")
         command_id = BRIDGE_STATE.enqueue(
@@ -1425,7 +1504,7 @@ def handle_tool(name, args):
             if time.time() - workflow_started >= task_timeout:
                 raise RuntimeError(f"WORKFLOW_TIMEOUT: task exceeded {task_timeout:g}s before step {index + 1}")
             claim = BRIDGE_STATE.require_claim(args.get("claimId"), write=requires_write, auto_renew_ttl=max(300, int(task_timeout)))
-            action = step.get("action") or {}
+            action = normalize_structured_action(step.get("action"))
             if not action.get("type"):
                 raise RuntimeError(f"steps[{index}].action.type is required")
             attempts = max(1, min(int(step.get("attempts", 1)), 5))
@@ -1571,11 +1650,37 @@ def handle_tool(name, args):
                 "waitTimeout": max(0, min(float(args.get("waitTimeout", 2)), 10)) * 1000,
             },
         )
-        response = BRIDGE_STATE.wait_result(
-            claim["extensionClientId"],
-            command_id,
-            float(args.get("timeout", 10)),
-        )
+        try:
+            response = BRIDGE_STATE.wait_result(
+                claim["extensionClientId"],
+                command_id,
+                float(args.get("timeout", 10)),
+            )
+        except RuntimeError as exc:
+            response = {"ok": False, "error": str(exc)}
+        response_error = str(response.get("error") or (response.get("result") or {}).get("error") or "")
+        fallback_allowed = bool(args.get("systemFallback", True)) and os.name == "nt"
+        fallback_needed = bool(dialog_system_fallback_reason(response))
+        if fallback_allowed and fallback_needed:
+            fallback_steps = []
+            if args.get("promptText"):
+                fallback_steps.append(windows_system_input({"type": "nativeText", "text": args.get("promptText")}, {"title": ""}))
+            fallback_steps.append(
+                windows_system_input(
+                    {"type": "nativeKey", "key": "Enter" if bool(args.get("accept", True)) else "Escape"},
+                    {"title": ""},
+                )
+            )
+            response = {
+                "ok": True,
+                "result": {
+                    "ok": True,
+                    "accepted": bool(args.get("accept", True)),
+                    "method": "windows-sendinput-fallback",
+                    "fallbackFrom": response_error,
+                    "steps": fallback_steps,
+                },
+            }
         BRIDGE_STATE.renew_claim(claim["claimId"], args.get("renewTtl", 300))
         return response
     if name == "browser_takeover_extension_advanced_control":
@@ -2041,7 +2146,7 @@ TOOLS = [
                     "properties": {
                         "type": {
                             "type": "string",
-                            "enum": ["click", "doubleClick", "hover", "clickAt", "fill", "press", "keypressPage", "read", "check", "select", "scroll", "wait", "snapshot", "upload"],
+                            "enum": ["click", "doubleClick", "hover", "clickAt", "fill", "type", "press", "keypressPage", "read", "check", "select", "scroll", "wait", "snapshot", "upload"],
                         },
                         "target": {
                             "type": "object",
@@ -2057,6 +2162,7 @@ TOOLS = [
                             },
                         },
                         "value": {},
+                        "text": {"type": "string"},
                         "key": {"type": "string"},
                         "attribute": {"type": "string"},
                         "checked": {"type": "boolean"},
@@ -2276,6 +2382,7 @@ TOOLS = [
                 "accept": {"type": "boolean", "default": True},
                 "promptText": {"type": "string"},
                 "waitTimeout": {"type": "number", "minimum": 0, "maximum": 10, "default": 2},
+                "systemFallback": {"type": "boolean", "default": True},
                 "timeout": {"type": "number", "default": 10},
                 "renewTtl": {"type": "integer", "minimum": 60, "maximum": 3600, "default": 300},
             },
@@ -2404,13 +2511,20 @@ TOOLS = [
 
 
 def main():
+    global PREVIOUS_RUNTIME_RECORD
+    PREVIOUS_RUNTIME_RECORD = read_runtime_journal()
+    write_runtime_journal("started")
     start_extension_bridge()
     while True:
         message = read_message()
         if message is None:
+            write_runtime_journal("stopped", method="eof")
             return
         request_id = message.get("id")
         method = message.get("method")
+        params = message.get("params") or {}
+        tool_name = params.get("name") if method == "tools/call" else None
+        write_runtime_journal("in-progress", method=method, tool=tool_name)
         try:
             if method == "initialize":
                 result(
@@ -2424,12 +2538,13 @@ def main():
             elif method == "tools/list":
                 result(request_id, {"tools": TOOLS})
             elif method == "tools/call":
-                params = message.get("params") or {}
                 payload = handle_tool(params.get("name"), params.get("arguments") or {})
                 result(request_id, tool_text(payload))
             elif request_id is not None:
                 error(request_id, -32601, f"Method not found: {method}")
+            write_runtime_journal("completed", method=method, tool=tool_name)
         except Exception as exc:
+            write_runtime_journal("error", method=method, tool=tool_name, error_message=exc)
             if request_id is not None:
                 error(request_id, -32000, str(exc))
 

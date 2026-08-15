@@ -63,6 +63,8 @@ The MCP server listens only on `127.0.0.1:17321`. The extension polls that local
 Use structured V2 actions for normal reading and interaction. Keep arbitrary JavaScript evaluation
 for advanced compatibility cases. For write actions, include an `expect` block when possible so
 the result is verified by URL, text, element visibility, or final value evidence.
+The compatibility action `type: "type"` is normalized to `fill`; `text` becomes `value` when no
+explicit value is present. This works for both direct actions and workflow steps.
 
 For SPA navigation, pass `urlPattern`, `selector`, or `text` to
 `browser_takeover_extension_navigate` whenever a reliable readiness signal is known. Treat
@@ -81,6 +83,8 @@ Use `health.connected` for current connectivity. Do not treat `roundTrip: false`
 itself; it expires after 30 seconds without a command and is reported as `resultChannel: "idle"`
 while polling remains healthy. Compare `server.instanceId`, PID, and uptime across observations to
 prove an MCP process restart before attributing lost in-memory claims to the browser extension.
+Inspect `server.previousSession`: `in-progress` identifies the exact host-terminated tool, while
+`completed`, `error`, or `stopped` shows that the previous request reached a normal boundary.
 Unexpired claims are persisted and restored across MCP process restarts; routing waits briefly for
 the same extension client to re-register. Re-claim only when the restored claim is expired, its tab
 no longer exists, or the browser itself restarted with a new client/tab identity.
@@ -105,6 +109,9 @@ metrics are semantically different.
 Browser-level native input, true full-page screenshots, and JavaScript dialog handling require the
 optional advanced control permission. The user enables it once from the extension popup. Do not
 fall back to arbitrary JavaScript when the task specifically requires trusted input semantics.
+On Windows, dialog debugger or `Page.enable` timeouts use a bounded focused-Chromium Enter/Escape
+fallback unless `systemFallback` is disabled. Native input also prefers the focused Chromium window
+when SPA navigation or a modal changed the title after the tab snapshot.
 
 ## Monitor webpage content
 
