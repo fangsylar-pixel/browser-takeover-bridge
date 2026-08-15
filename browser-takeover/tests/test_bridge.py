@@ -323,6 +323,8 @@ class ToolCompatibilityTests(unittest.TestCase):
         self.assertTrue({"waitTimeout", "settleMs", "selector", "text", "urlPattern"}.issubset(navigation))
         pagination = tools["browser_takeover_extension_paginate"]["inputSchema"]["properties"]
         self.assertIn("continueOnTimeout", pagination)
+        self.assertTrue({"mode", "scrollContainer", "scrollStep", "scrollWaitTimeout", "stableRounds"}.issubset(pagination))
+        self.assertNotIn("nextSelector", tools["browser_takeover_extension_paginate"]["inputSchema"]["required"])
 
     def test_monitor_check_reads_claimed_tab_and_detects_change(self):
         original_state = bridge.BRIDGE_STATE

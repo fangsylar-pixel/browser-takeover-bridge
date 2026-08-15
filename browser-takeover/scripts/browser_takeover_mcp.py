@@ -1515,17 +1515,23 @@ def handle_tool(name, args):
         start_extension_bridge()
         claim = BRIDGE_STATE.require_claim(args.get("claimId"), write=True, auto_renew_ttl=300)
         config = {
+            "mode": args.get("mode", "pagination"),
             "rowSelector": args.get("rowSelector"),
             "nextSelector": args.get("nextSelector"),
+            "scrollContainer": args.get("scrollContainer"),
+            "scrollStep": args.get("scrollStep"),
+            "scrollWaitTimeout": args.get("scrollWaitTimeout", 2000),
+            "stableRounds": args.get("stableRounds", 2),
             "fields": args.get("fields"),
             "keyField": args.get("keyField"),
             "maxPages": args.get("maxPages", 50),
             "waitTimeout": args.get("waitTimeout", 10000),
             "continueOnTimeout": args.get("continueOnTimeout", True),
         }
-        if not config["rowSelector"] or not config["nextSelector"]:
-            raise RuntimeError("rowSelector and nextSelector are required")
-        timeout = max(float(args.get("timeout", 120)), config["maxPages"] * config["waitTimeout"] / 1000 + 5)
+        if not config["rowSelector"] or (config["mode"] != "scroll" and not config["nextSelector"]):
+            raise RuntimeError("rowSelector and nextSelector are required for pagination mode")
+        per_step_wait = config["scrollWaitTimeout"] if config["mode"] == "scroll" else config["waitTimeout"]
+        timeout = max(float(args.get("timeout", 120)), config["maxPages"] * per_step_wait / 1000 + 5)
         command_id = BRIDGE_STATE.enqueue(
             claim["extensionClientId"],
             {"type": "paginate", "tabId": claim["tabId"], "config": config, "commandTimeout": min(timeout * 1000, 300000)},
@@ -2213,20 +2219,26 @@ TOOLS = [
     },
     {
         "name": "browser_takeover_extension_paginate",
-        "description": "Traverse a DOM-paginated list inside one claimed tab, wait for each SPA update, deduplicate rows, and return the combined structured result in one call.",
+        "description": "Traverse a paginated or infinite-scroll DOM list inside one claimed tab, wait for SPA updates, deduplicate rows, and return structured results in one call.",
         "inputSchema": {
             "type": "object",
-            "required": ["claimId", "rowSelector", "nextSelector"],
+            "required": ["claimId", "rowSelector"],
             "properties": {
                 "claimId": {"type": "string"},
+                "mode": {"type": "string", "enum": ["pagination", "scroll"], "default": "pagination"},
                 "rowSelector": {"type": "string"},
                 "nextSelector": {"type": "string"},
+                "scrollContainer": {"type": "string"},
+                "scrollStep": {"type": "number", "minimum": 1},
+                "scrollWaitTimeout": {"type": "number", "minimum": 250, "maximum": 30000, "default": 2000},
+                "stableRounds": {"type": "integer", "minimum": 1, "maximum": 10, "default": 2},
                 "fields": {
                     "type": "object",
                     "additionalProperties": {
                         "oneOf": [
                             {"type": "string"},
-                            {"type": "object", "properties": {"css": {"type": "string"}, "attribute": {"type": "string"}}},
+                            {"type": "array", "items": {"oneOf": [{"type": "string"}, {"type": "object"}]}},
+                            {"type": "object", "properties": {"css": {"oneOf": [{"type": "string"}, {"type": "array", "items": {"type": "string"}}]}, "attribute": {"type": "string"}, "textPattern": {"type": "string"}, "flags": {"type": "string"}, "group": {"type": "integer", "minimum": 0}}},
                         ]
                     },
                 },

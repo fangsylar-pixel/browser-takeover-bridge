@@ -113,6 +113,14 @@ assert.equal(navigation.ok, true, "navigation should wait for readiness evidence
 assert.equal(navigation.timedOut, false);
 assert.equal(navigation.evidence.selectorMatched, true);
 
+const browserReadyNavigation = await context.navigateTab({
+  tabId: 1,
+  url: "https://example.test/ready",
+  options: { waitTimeout: 1000, settleMs: 0 },
+});
+assert.equal(browserReadyNavigation.ok, true, "navigation without business evidence should finish at browser readiness");
+assert.equal(browserReadyNavigation.evidence.source, "browser-tab");
+
 let response;
 listeners.message({ type: "bridge-status" }, {}, (value) => { response = value; });
 assert.equal(response.ok, true);

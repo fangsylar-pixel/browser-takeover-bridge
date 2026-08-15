@@ -222,9 +222,12 @@ async function paginateTab(command) {
     func: async (options) => {
       const rowSelector = String(options.rowSelector || "");
       const nextSelector = String(options.nextSelector || "");
-      if (!rowSelector || !nextSelector) throw new Error("rowSelector and nextSelector are required");
+      const mode = options.mode === "scroll" ? "scroll" : "pagination";
+      if (!rowSelector || (mode === "pagination" && !nextSelector)) throw new Error("rowSelector and nextSelector are required for pagination mode");
       const maxPages = Math.max(1, Math.min(Number(options.maxPages || 50), 200));
       const waitTimeout = Math.max(500, Math.min(Number(options.waitTimeout || 10000), 30000));
+      const scrollWaitTimeout = Math.max(250, Math.min(Number(options.scrollWaitTimeout || 2000), 30000));
+      const stableRoundsRequired = Math.max(1, Math.min(Number(options.stableRounds || 2), 10));
       const fields = options.fields && typeof options.fields === "object" ? options.fields : null;
       const keyField = String(options.keyField || "");
       const continueOnTimeout = options.continueOnTimeout !== false;
@@ -233,32 +236,57 @@ async function paginateTab(command) {
       const pageSignatures = new Set();
       const warnings = [];
       const readValue = (root, descriptor) => {
+        if (Array.isArray(descriptor)) {
+          for (const candidate of descriptor) {
+            const value = readValue(root, candidate);
+            if (value !== null && value !== "") return value;
+          }
+          return null;
+        }
         const spec = typeof descriptor === "string" ? { css: descriptor } : (descriptor || {});
-        const node = spec.css ? root.querySelector(spec.css) : root;
+        const selectors = Array.isArray(spec.css) ? spec.css : [spec.css];
+        let node = root;
+        if (spec.css) {
+          node = null;
+          for (const selector of selectors) {
+            node = root.querySelector(selector);
+            if (node) break;
+          }
+        }
         if (!node) return null;
         if (spec.attribute) return node.getAttribute(spec.attribute);
-        return (node.innerText || node.textContent || "").trim();
+        const text = (node.innerText || node.textContent || "").trim();
+        if (spec.textPattern) {
+          const match = text.match(new RegExp(spec.textPattern, spec.flags || ""));
+          return match ? (match[Number(spec.group ?? 1)] ?? match[0]) : null;
+        }
+        return text;
       };
-      const signature = () => Array.from(document.querySelectorAll(rowSelector)).slice(0, 3).map((node) => node.innerText || node.textContent || "").join("\n");
-      const waitForChange = (before) => new Promise((resolve, reject) => {
+      const signature = () => {
+        const nodes = Array.from(document.querySelectorAll(rowSelector));
+        const samples = [...nodes.slice(0, 2), ...nodes.slice(-3)];
+        return `${nodes.length}\n${samples.map((node) => node.innerText || node.textContent || "").join("\n")}`;
+      };
+      const waitForChange = (before, timeoutMs = waitTimeout) => new Promise((resolve, reject) => {
         const started = Date.now();
         let timer;
         const observer = new MutationObserver(() => {
           if (signature() !== before) { clearInterval(timer); observer.disconnect(); resolve(true); }
-          else if (Date.now() - started >= waitTimeout) { clearInterval(timer); observer.disconnect(); reject(new Error("pagination DOM did not change")); }
+          else if (Date.now() - started >= timeoutMs) { clearInterval(timer); observer.disconnect(); reject(new Error("collection DOM did not change")); }
         });
         observer.observe(document.documentElement, { childList: true, subtree: true, characterData: true });
         timer = setInterval(() => {
           if (signature() !== before) { clearInterval(timer); observer.disconnect(); resolve(true); }
-          else if (Date.now() - started >= waitTimeout) { clearInterval(timer); observer.disconnect(); reject(new Error("pagination DOM did not change")); }
+          else if (Date.now() - started >= timeoutMs) { clearInterval(timer); observer.disconnect(); reject(new Error("collection DOM did not change")); }
         }, 100);
       });
       let pages = 0;
       let stopReason = "max-pages";
+      let stableRounds = 0;
       for (; pages < maxPages; pages += 1) {
         const pageRows = Array.from(document.querySelectorAll(rowSelector));
         const currentSignature = signature();
-        if (pageSignatures.has(currentSignature)) {
+        if (mode === "pagination" && pageSignatures.has(currentSignature)) {
           stopReason = "repeated-page";
           warnings.push(`Stopped before page ${pages + 1}: repeated page content`);
           break;
@@ -268,6 +296,25 @@ async function paginateTab(command) {
           const value = fields ? Object.fromEntries(Object.entries(fields).map(([name, descriptor]) => [name, readValue(node, descriptor)])) : (node.innerText || node.textContent || "").trim();
           const key = keyField && value && typeof value === "object" ? value[keyField] : JSON.stringify(value);
           if (!seen.has(String(key))) { seen.add(String(key)); rows.push(value); }
+        }
+        if (mode === "scroll") {
+          const scroller = options.scrollContainer ? document.querySelector(options.scrollContainer) : document.scrollingElement;
+          if (!scroller) { stopReason = "scroll-container-missing"; break; }
+          const before = currentSignature;
+          const amount = Number(options.scrollStep || scroller.clientHeight || window.innerHeight || 800);
+          if (scroller === document.scrollingElement) window.scrollBy({ top: amount, behavior: "instant" });
+          else scroller.scrollBy({ top: amount, behavior: "instant" });
+          try {
+            await waitForChange(before, scrollWaitTimeout);
+            stableRounds = 0;
+          } catch (error) {
+            stableRounds += 1;
+            if (stableRounds >= stableRoundsRequired) {
+              stopReason = "scroll-stable";
+              break;
+            }
+          }
+          continue;
         }
         const next = document.querySelector(nextSelector);
         const disabled = !next || next.disabled || next.getAttribute("aria-disabled") === "true" || next.classList.contains("disabled");
@@ -291,6 +338,7 @@ async function paginateTab(command) {
         count: rows.length,
         pages: completedPages,
         truncated: pages >= maxPages || stopReason === "page-change-timeout",
+        mode,
         stopReason,
         warnings,
       };
@@ -989,9 +1037,22 @@ async function navigateTab(command) {
   let tab;
   let evidence = null;
   let lastError = null;
+  const hasBusinessEvidence = Boolean(options.selector || options.text || options.urlPattern);
   while (Date.now() - started < timeout) {
     tab = await chrome.tabs.get(tabId);
     if (tab.status === "complete") {
+      if (!hasBusinessEvidence) {
+        evidence = {
+          selectorMatched: true,
+          textMatched: true,
+          urlMatched: true,
+          href: tab.url || "",
+          title: tab.title || "",
+          readyState: "complete",
+          source: "browser-tab",
+        };
+        break;
+      }
       try {
         const [injection] = await chrome.scripting.executeScript({
           target: { tabId },
