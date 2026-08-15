@@ -20,6 +20,8 @@ It supports:
 - Copying support diagnostics without exposing trusted-host details.
 - Recovering automatically from stalled extension result channels and excluding duplicate unhealthy extension instances.
 - Traversing paginated SPA lists in one MCP call with structured fields and deduplication.
+- Waiting for verifiable SPA navigation readiness instead of treating URL dispatch as page success.
+- Discovering custom clickable SPA controls with reusable selectors and interaction evidence.
 
 ## Install From The Codex Marketplace Source
 
@@ -113,6 +115,36 @@ results, and returns all pages in one MCP response:
 The next-page control is considered finished when it is missing, disabled, has
 `aria-disabled="true"`, or has a `disabled` class. `maxPages` is capped at 200. For infinite-scroll
 pages, use the structured `scroll` action instead.
+
+Pagination responses include `stopReason`, `warnings`, and rows collected before a page-change
+timeout. By default, a stalled transition returns partial data instead of discarding a long
+extraction. Set `continueOnTimeout` to `false` for strict all-or-nothing behavior.
+
+### Verified SPA navigation
+
+`browser_takeover_extension_navigate` waits for tab completion and can require business-level
+evidence before reporting success:
+
+```json
+{
+  "clientId": "extension-client",
+  "tabId": 42,
+  "url": "https://example.test/dashboard",
+  "urlPattern": "/dashboard(?:[/?#]|$)",
+  "selector": "main .dashboard-ready",
+  "text": "数据概览",
+  "waitTimeout": 45,
+  "settleMs": 800
+}
+```
+
+The result distinguishes requested and final URLs, reports redirects, includes readiness evidence,
+and returns a deterministic timeout instead of treating dispatch as successful loading. Sites that
+reject deep links can use the redirect evidence and then run a verified menu-click workflow.
+
+Structured snapshots also discover visible custom controls with pointer, tabindex, role, or click
+handler behavior. Returned controls include a reusable `selector` and `interactiveBy` reason, which
+reduces arbitrary JavaScript use on SPA administration pages.
 
 ### Timeout recovery and duplicate extensions
 

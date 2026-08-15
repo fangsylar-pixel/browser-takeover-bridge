@@ -93,6 +93,9 @@ Most browser automation tools need a new browser profile or a browser that was s
 - Pause all automation instantly from the extension popup.
 - Restrict control to an explicit trusted-site list.
 - Copy privacy-safe diagnostics for support and team troubleshooting.
+- Wait for SPA navigation to satisfy URL, selector, and text evidence before reporting success.
+- Discover custom clickable controls and return reusable selectors in structured snapshots.
+- Traverse DOM pagination with deduplication, partial-result recovery, and explicit stop reasons.
 
 Verified locally with:
 

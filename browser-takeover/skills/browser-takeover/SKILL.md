@@ -64,6 +64,15 @@ Use structured V2 actions for normal reading and interaction. Keep arbitrary Jav
 for advanced compatibility cases. For write actions, include an `expect` block when possible so
 the result is verified by URL, text, element visibility, or final value evidence.
 
+For SPA navigation, pass `urlPattern`, `selector`, or `text` to
+`browser_takeover_extension_navigate` whenever a reliable readiness signal is known. Treat
+`ok: false`, `timedOut: true`, or an unexpected final URL as evidence that the route was rejected or
+the business content did not load. If a site rejects deep links, follow the redirect with a verified
+menu click instead of repeatedly navigating to the same URL.
+
+Snapshot controls include a reusable CSS `selector` and an `interactiveBy` reason. Prefer that
+selector for custom `div`/`span` controls before falling back to arbitrary JavaScript.
+
 Before diagnosing a connection problem, call `browser_takeover_extension_diagnostics`. A healthy
 client reports fresh registration, tab sync, and polling. `roundTrip` becomes true after at least
 one command result is returned.
@@ -74,7 +83,8 @@ the tab while the bridge automatically keeps the interactive claim alive.
 
 Pagination requires an interactive claim because it clicks the next-page control. Provide
 `rowSelector`, `nextSelector`, and optional `fields`, `keyField`, `maxPages`, and `waitTimeout`.
-Do not use it for infinite-scroll pages. If a command returns `EXTENSION_COMMAND_TIMEOUT`, inspect
+Inspect `stopReason` and `warnings`; partial rows are retained after a page-change timeout unless
+`continueOnTimeout` is false. Do not use it for infinite-scroll pages. If a command returns `EXTENSION_COMMAND_TIMEOUT`, inspect
 diagnostics after the automatic recovery attempt before retrying; do not immediately start an
 unbounded retry loop.
 

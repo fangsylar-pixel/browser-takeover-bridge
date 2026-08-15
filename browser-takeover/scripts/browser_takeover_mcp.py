@@ -1521,6 +1521,7 @@ def handle_tool(name, args):
             "keyField": args.get("keyField"),
             "maxPages": args.get("maxPages", 50),
             "waitTimeout": args.get("waitTimeout", 10000),
+            "continueOnTimeout": args.get("continueOnTimeout", True),
         }
         if not config["rowSelector"] or not config["nextSelector"]:
             raise RuntimeError("rowSelector and nextSelector are required")
@@ -1539,8 +1540,19 @@ def handle_tool(name, args):
         url = args.get("url")
         if not client_id or tab_id is None or not url:
             raise RuntimeError("clientId, tabId, and url are required")
-        command_id = BRIDGE_STATE.enqueue(client_id, {"type": "navigate", "tabId": tab_id, "url": url})
-        return BRIDGE_STATE.wait_result(client_id, command_id, float(args.get("timeout", 10)))
+        wait_timeout = float(args.get("waitTimeout", 30))
+        options = {
+            "waitTimeout": wait_timeout * 1000,
+            "settleMs": args.get("settleMs", 500),
+            "selector": args.get("selector"),
+            "text": args.get("text"),
+            "urlPattern": args.get("urlPattern"),
+        }
+        command_id = BRIDGE_STATE.enqueue(
+            client_id,
+            {"type": "navigate", "tabId": tab_id, "url": url, "options": options, "commandTimeout": min(wait_timeout * 1000 + 5000, 125000)},
+        )
+        return BRIDGE_STATE.wait_result(client_id, command_id, float(args.get("timeout", wait_timeout + 5)))
     if name == "browser_takeover_extension_screenshot":
         start_extension_bridge()
         client_id = args.get("clientId")
@@ -2221,6 +2233,7 @@ TOOLS = [
                 "keyField": {"type": "string"},
                 "maxPages": {"type": "integer", "minimum": 1, "maximum": 200, "default": 50},
                 "waitTimeout": {"type": "number", "minimum": 500, "maximum": 30000, "default": 10000},
+                "continueOnTimeout": {"type": "boolean", "default": True},
                 "timeout": {"type": "number", "minimum": 1, "maximum": 300, "default": 120},
                 "renewTtl": {"type": "integer", "minimum": 60, "maximum": 3600, "default": 300},
             },
@@ -2228,7 +2241,7 @@ TOOLS = [
     },
     {
         "name": "browser_takeover_extension_navigate",
-        "description": "Navigate an already-open tab through the companion extension.",
+        "description": "Navigate an already-open tab and wait for browser readiness plus optional URL, selector, and text evidence.",
         "inputSchema": {
             "type": "object",
             "required": ["clientId", "tabId", "url"],
@@ -2236,7 +2249,12 @@ TOOLS = [
                 "clientId": {"type": "string"},
                 "tabId": {"type": ["integer", "string"]},
                 "url": {"type": "string"},
-                "timeout": {"type": "number", "default": 10},
+                "waitTimeout": {"type": "number", "minimum": 1, "maximum": 120, "default": 30},
+                "settleMs": {"type": "number", "minimum": 0, "maximum": 10000, "default": 500},
+                "selector": {"type": "string"},
+                "text": {"type": "string"},
+                "urlPattern": {"type": "string"},
+                "timeout": {"type": "number", "minimum": 1, "maximum": 125, "default": 35},
             },
         },
     },
