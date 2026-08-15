@@ -88,6 +88,7 @@ Most browser automation tools need a new browser profile or a browser that was s
 - Authenticate extension traffic to the localhost bridge with a per-extension token.
 - Display live connection health and errors in the extension popup.
 - Stream tab lifecycle events and capture multiple open tabs in one readonly batch.
+- Persist webpage monitors, compare readonly snapshots, and detect text or numeric conditions.
 - Verify write actions using observable URL, text, element, or value evidence.
 - Pause all automation instantly from the extension popup.
 - Restrict control to an explicit trusted-site list.
@@ -98,6 +99,70 @@ Verified locally with:
 - ChatGPT: send prompts and download generated images.
 - Feishu/Lark Docs: read document text and download embedded images.
 - Toutiao: read authenticated pages and capture screenshots.
+
+## Webpage Monitoring In MARVIS
+
+Browser Takeover can now monitor content in an already-open Chrome or Edge tab. The MCP server
+stores monitor definitions and snapshot history locally; MARVIS Automatic Tasks supplies the
+schedule. Monitoring reuses the extension's readonly claim system and does not add browser
+permissions.
+
+### Quick start
+
+After installing the plugin and confirming that `browser_takeover_extension_bridge_status` reports
+a connected client:
+
+1. Open the page you want to monitor in the connected browser profile.
+2. Ask MARVIS to create a monitor. Prefer a stable CSS or semantic target instead of the entire
+   page, because clocks, advertisements, and rotating recommendations can create noisy changes.
+3. Run the monitor once to create its baseline.
+4. Add a MARVIS Automatic Task that checks it at the desired interval.
+5. Notify only when `newlyTriggered` is `true`, and include the returned diff and source URL.
+
+Example prompts:
+
+```text
+监控当前商品页面的 .price 元素，价格低于 500 元时提醒我。先检查一次建立基线。
+
+监控这个报名页面的正文；出现“立即报名”时提醒我，并附上变化内容和页面链接。
+
+每天上午 9 点检查这个游戏公告页面，有变化时告诉我新增或删除了哪些内容。
+```
+
+### Trigger rules
+
+| Rule | Purpose | Example |
+| --- | --- | --- |
+| `changed` | Any content change after the first baseline | Announcement or policy updates |
+| `contains` | Text appears | `立即报名`, `有货` |
+| `not_contains` | Text disappears | Maintenance banner removed |
+| `equals` | Exact text match | Status becomes `已开放` |
+| `regex` | Pattern match | Version numbers or structured status text |
+| `number_above` | Extracted number exceeds a threshold | Score, capacity, or queue length |
+| `number_below` | Extracted number falls below a threshold | Product price |
+
+For prices or other mixed text, provide `numberPattern` with a capture group, for example
+`¥([\\d,]+(?:\\.\\d+)?)`.
+
+### Monitor tools
+
+- `browser_takeover_monitor_create`: create a persistent monitor.
+- `browser_takeover_monitor_check`: capture content, compare it with the last snapshot, evaluate the
+  rule, and save history.
+- `browser_takeover_monitor_list`: list active or paused monitors without returning stored page
+  content.
+- `browser_takeover_monitor_history`: inspect recent checks; content is excluded unless
+  `includeContent` is explicitly enabled.
+- `browser_takeover_monitor_update`: pause, resume, rename, or replace a trigger rule.
+- `browser_takeover_monitor_delete`: permanently remove a monitor and its local history.
+
+On Windows, monitor data defaults to `%LOCALAPPDATA%\\BrowserTakeover\\monitors.json`. On other
+systems it defaults to `~/.browser-takeover/monitors.json`. Set
+`BROWSER_TAKEOVER_MONITOR_FILE` to choose another location. History from authenticated pages may be
+sensitive, so do not sync or share this file unintentionally.
+
+The monitor module deliberately does not buy, submit, publish, or bypass CAPTCHA/login controls.
+Those remain separate interactive actions and require explicit authorization.
 
 ## Project Layout
 
@@ -110,6 +175,7 @@ browser-takeover/
     background.js
   scripts/
     browser_takeover_mcp.py
+    webpage_monitor.py
   skills/
     browser-takeover/SKILL.md
   README.md
@@ -186,6 +252,12 @@ Useful tools include:
 - `browser_takeover_renew_claim`
 - `browser_takeover_release_tab`
 - `browser_takeover_extension_action`
+- `browser_takeover_monitor_create`
+- `browser_takeover_monitor_check`
+- `browser_takeover_monitor_list`
+- `browser_takeover_monitor_history`
+- `browser_takeover_monitor_update`
+- `browser_takeover_monitor_delete`
 
 ## Security Model
 

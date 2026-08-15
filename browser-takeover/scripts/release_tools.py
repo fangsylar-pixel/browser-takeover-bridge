@@ -56,6 +56,7 @@ def validate_release() -> list[str]:
         PLUGIN_ROOT / "extension" / "popup.js",
         PLUGIN_ROOT / "skills" / "browser-takeover" / "SKILL.md",
         PLUGIN_ROOT / "scripts" / "browser_takeover_mcp.py",
+        PLUGIN_ROOT / "scripts" / "webpage_monitor.py",
     ]
     missing = [str(path.relative_to(PROJECT_ROOT)) for path in required if not path.is_file()]
     if missing:

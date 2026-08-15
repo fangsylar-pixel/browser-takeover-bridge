@@ -1,5 +1,26 @@
 # Changelog
 
+## Unreleased
+
+- Fail stalled extension commands deterministically, clear their pending state, and queue a rate-limited extension reload for recovery.
+- Arbitrate duplicate extension instances by browser/tab fingerprint, health, and capabilities so unhealthy copies are excluded from routing.
+- Increase claim leases to five minutes and renew them automatically throughout long workflows.
+- Add `browser_takeover_extension_paginate` for in-page SPA pagination, DOM-change waits, deduplication, and structured extraction in one MCP call.
+
+## Unreleased
+
+- Added persistent webpage content monitors backed by a local JSON store.
+- Added change, keyword, equality, regular-expression, and numeric threshold trigger rules.
+- Added readonly monitor checks that reuse existing extension claims and release temporary claims
+  after every check.
+- Added baseline creation, compact diffs, trigger state, source metadata, and bounded history.
+- Added monitor listing, history, pause/resume, rule update, rename, and deletion tools.
+- Kept stored authenticated-page content out of normal monitor list/history responses by default.
+- Added MARVIS Automatic Task guidance, prompt examples, rule documentation, storage paths, and
+  safety boundaries.
+- Added unit and MCP integration tests for persistence, price extraction, change detection, paused
+  monitors, deletion, and readonly tab capture.
+
 ## 0.6.0
 
 - Added a repository-backed Codex Marketplace source and one-command installation instructions.

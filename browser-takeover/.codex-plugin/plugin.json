@@ -1,6 +1,6 @@
 {
   "name": "browser-takeover",
-  "version": "0.6.0+codex.20260618181149",
+  "version": "0.6.0+codex.20260814124922",
   "description": "A local-first AI browser bridge for securely controlling already-open authenticated Chrome and Edge tabs.",
   "author": {
     "name": "Fangsylar",

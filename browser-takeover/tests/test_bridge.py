@@ -2,6 +2,7 @@ import importlib.util
 import json
 import threading
 import time
+import tempfile
 import unittest
 import urllib.error
 import urllib.request
@@ -96,6 +97,37 @@ class ExtensionBridgeStateTests(unittest.TestCase):
         claim = self.state.claim_tab("extension-1", 7, "owner-a", "interactive", 10)
         self.state.claims[claim["claimId"]]["expiresAt"] = time.time() - 1
         self.assertEqual(self.state.list_claims(), [])
+
+    def test_command_timeout_cleans_state_and_queues_recovery(self):
+        self.state.poll("extension-1")
+        command_id = self.state.enqueue("extension-1", {"type": "action", "tabId": 7})
+        with self.assertRaisesRegex(RuntimeError, "EXTENSION_COMMAND_TIMEOUT"):
+            self.state.wait_result("extension-1", command_id, timeout=0.1)
+        self.assertNotIn(("extension-1", command_id), self.state.pending_commands)
+        recovery = self.state.poll("extension-1")
+        self.assertEqual(recovery["type"], "reload")
+        self.assertEqual(recovery["recoveryFor"], command_id)
+
+    def test_duplicate_clients_route_only_to_healthiest_instance(self):
+        fingerprint = {"browser": "edge", "userAgent": "same-browser", "protocolVersion": 2}
+        self.state = bridge.ExtensionBridgeState()
+        self.state.register("weak", {**fingerprint, "capabilities": ["tabs"]})
+        self.state.register("healthy", {**fingerprint, "capabilities": ["tabs", "action", "native-input"]})
+        self.state.update_tabs("weak", [{"id": 1, "url": "https://same.test"}])
+        self.state.update_tabs("healthy", [{"id": 1, "url": "https://same.test"}])
+        self.state.poll("weak")
+        self.state.poll("healthy")
+        self.state.complete("healthy", "probe", {"ok": True})
+        tabs = self.state.all_tabs()
+        self.assertEqual([tab["clientId"] for tab in tabs], ["healthy"])
+        with self.assertRaisesRegex(RuntimeError, "superseded"):
+            self.state.enqueue("weak", {"type": "action"})
+
+    def test_claim_auto_renews_when_near_expiry(self):
+        claim = self.state.claim_tab("extension-1", 7, "owner-a", "interactive", 10)
+        original_expiry = self.state.claims[claim["claimId"]]["expiresAt"]
+        active = self.state.require_claim(claim["claimId"], write=True)
+        self.assertGreater(active["expiresAt"], original_expiry + 200)
 
 
 class BridgeHttpTests(unittest.TestCase):
@@ -249,9 +281,81 @@ class ToolCompatibilityTests(unittest.TestCase):
             "browser_takeover_extension_native_input",
             "browser_takeover_extension_handle_dialog",
             "browser_takeover_extension_advanced_control",
+            "browser_takeover_extension_paginate",
+        }
+        monitoring = {
+            "browser_takeover_monitor_create",
+            "browser_takeover_monitor_check",
+            "browser_takeover_monitor_list",
+            "browser_takeover_monitor_history",
+            "browser_takeover_monitor_update",
+            "browser_takeover_monitor_delete",
         }
         self.assertTrue(legacy.issubset(names))
         self.assertTrue(v2.issubset(names))
+        self.assertTrue(monitoring.issubset(names))
+
+    def test_monitor_check_reads_claimed_tab_and_detects_change(self):
+        original_state = bridge.BRIDGE_STATE
+        original_start = bridge.start_extension_bridge
+        original_store = bridge.MONITOR_STORE
+        bridge.BRIDGE_STATE = bridge.ExtensionBridgeState()
+        bridge.start_extension_bridge = lambda: {"started": False, "test": True}
+        with tempfile.TemporaryDirectory() as temp_dir:
+            bridge.MONITOR_STORE = bridge.MonitorStore(Path(temp_dir) / "monitors.json")
+            try:
+                bridge.BRIDGE_STATE.register("extension-monitor", {"protocolVersion": 2})
+                bridge.BRIDGE_STATE.update_tabs(
+                    "extension-monitor",
+                    [{"id": 88, "title": "Monitor Test", "url": "https://example.test/product"}],
+                )
+                monitor = bridge.handle_tool(
+                    "browser_takeover_monitor_create",
+                    {
+                        "name": "Product title",
+                        "urlPattern": "example.test/product",
+                        "target": {"css": "h1"},
+                        "rule": {"type": "changed"},
+                    },
+                )["monitor"]
+                values = iter(["Old title", "New title"])
+
+                def fake_extension():
+                    handled = 0
+                    while handled < 2:
+                        command = bridge.BRIDGE_STATE.poll("extension-monitor")
+                        if not command:
+                            time.sleep(0.01)
+                            continue
+                        bridge.BRIDGE_STATE.complete(
+                            "extension-monitor",
+                            command["id"],
+                            {
+                                "ok": True,
+                                "result": {
+                                    "ok": True,
+                                    "value": next(values),
+                                    "title": "Monitor Test",
+                                    "href": "https://example.test/product",
+                                },
+                            },
+                        )
+                        handled += 1
+
+                worker = threading.Thread(target=fake_extension)
+                worker.start()
+                first = bridge.handle_tool("browser_takeover_monitor_check", {"monitorId": monitor["monitorId"], "timeout": 2})
+                second = bridge.handle_tool("browser_takeover_monitor_check", {"monitorId": monitor["monitorId"], "timeout": 2})
+                worker.join(timeout=2)
+                self.assertTrue(first["baselineCreated"])
+                self.assertFalse(first["changed"])
+                self.assertTrue(second["changed"])
+                self.assertTrue(second["triggered"])
+                self.assertEqual(bridge.BRIDGE_STATE.list_claims(), [])
+            finally:
+                bridge.BRIDGE_STATE = original_state
+                bridge.start_extension_bridge = original_start
+                bridge.MONITOR_STORE = original_store
 
     def test_v2_action_round_trip_uses_claimed_tab(self):
         original_state = bridge.BRIDGE_STATE
@@ -426,6 +530,8 @@ class ToolCompatibilityTests(unittest.TestCase):
         self.assertIn("AUTOMATION_ENABLED_KEY", background)
         self.assertIn("TRUSTED_HOSTS_KEY", background)
         self.assertIn('command.type === "securityControl"', background)
+        self.assertIn('"paginate"', background)
+        self.assertIn('command.type === "paginate"', background)
         self.assertIn("Page.handleJavaScriptDialog", background)
         self.assertIn("debugger", manifest["permissions"])
         self.assertNotIn("optional_permissions", manifest)

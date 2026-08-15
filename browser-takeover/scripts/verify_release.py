@@ -43,10 +43,12 @@ def main() -> int:
                 "-m",
                 "py_compile",
                 "browser-takeover/scripts/browser_takeover_mcp.py",
+                "browser-takeover/scripts/webpage_monitor.py",
                 "browser-takeover/scripts/benchmark_extension.py",
                 "browser-takeover/scripts/release_tools.py",
                 "browser-takeover/scripts/verify_release.py",
                 "browser-takeover/tests/test_bridge.py",
+                "browser-takeover/tests/test_webpage_monitor.py",
                 "browser-takeover/tests/test_release_tools.py",
             ],
         )

@@ -35,8 +35,15 @@ When the extension is not installed and the current browser is not CDP-attachabl
    - `browser_takeover_extension_native_input`
    - `browser_takeover_extension_handle_dialog`
    - `browser_takeover_extension_evaluate`
+   - `browser_takeover_extension_paginate`
    - `browser_takeover_extension_navigate`
    - `browser_takeover_extension_screenshot`
+   - `browser_takeover_monitor_create`
+   - `browser_takeover_monitor_check`
+   - `browser_takeover_monitor_list`
+   - `browser_takeover_monitor_history`
+   - `browser_takeover_monitor_update`
+   - `browser_takeover_monitor_delete`
 3. If a CDP port is reachable, call `browser_takeover_list_pages`.
 4. Use `browser_takeover_navigate`, `browser_takeover_evaluate`, or `browser_takeover_screenshot` against the chosen CDP port and page.
 5. If neither the extension nor a CDP port is reachable, call `browser_takeover_launch` with `browser` set to `edge` or `chrome`. This opens a persistent profile under the user's local app data.
@@ -61,9 +68,39 @@ Before diagnosing a connection problem, call `browser_takeover_extension_diagnos
 client reports fresh registration, tab sync, and polling. `roundTrip` becomes true after at least
 one command result is returned.
 
+For large DOM-paginated lists, prefer `browser_takeover_extension_paginate` over an agent-side
+page loop. It performs SPA change waits, row deduplication, and structured field extraction within
+the tab while the bridge automatically keeps the interactive claim alive.
+
+Pagination requires an interactive claim because it clicks the next-page control. Provide
+`rowSelector`, `nextSelector`, and optional `fields`, `keyField`, `maxPages`, and `waitTimeout`.
+Do not use it for infinite-scroll pages. If a command returns `EXTENSION_COMMAND_TIMEOUT`, inspect
+diagnostics after the automatic recovery attempt before retrying; do not immediately start an
+unbounded retry loop.
+
 Browser-level native input, true full-page screenshots, and JavaScript dialog handling require the
 optional advanced control permission. The user enables it once from the extension popup. Do not
 fall back to arbitrary JavaScript when the task specifically requires trusted input semantics.
+
+## Monitor webpage content
+
+Use persistent monitors when the user asks to watch a page for changes, prices, stock, keywords,
+registration availability, announcements, or similar conditions.
+
+1. Ask for or infer the target page and trigger condition.
+2. Make sure the page is open in the connected Chrome or Edge profile.
+3. Call `browser_takeover_monitor_create` with a stable URL substring. Prefer a narrow `target`
+   selector over monitoring the entire page so timestamps and rotating content do not cause noise.
+4. Call `browser_takeover_monitor_check` once to establish a baseline.
+5. For recurring checks, use the host agent's scheduled-task feature to call the check tool. The MCP
+   server stores state but does not create an operating-system scheduler.
+6. Notify the user when `newlyTriggered` is true. Include `diff`, `currentPreview`, and source URL as
+   evidence. Do not purchase, submit, or publish automatically unless separately authorized.
+
+Use `changed` for any content change; `contains`, `not_contains`, `equals`, or `regex` for text; and
+`number_above` or `number_below` for prices and numeric thresholds. Pause noisy monitors before
+changing their selector or rule. Treat monitor history as sensitive because it may contain text from
+authenticated pages.
 
 ## Practical setup
 
