@@ -1,5 +1,7 @@
 import importlib.util
+import io
 import json
+import types
 import threading
 import time
 import tempfile
@@ -128,6 +130,26 @@ class ExtensionBridgeStateTests(unittest.TestCase):
         original_expiry = self.state.claims[claim["claimId"]]["expiresAt"]
         active = self.state.require_claim(claim["claimId"], write=True)
         self.assertGreater(active["expiresAt"], original_expiry + 200)
+
+    def test_stdio_auto_detects_marvis_newline_framing(self):
+        original_stdin = bridge.sys.stdin
+        original_stdout = bridge.sys.stdout
+        original_framing = bridge.STDIO_FRAMING
+        try:
+            request = b'{"jsonrpc":"2.0","id":1,"method":"initialize","params":{}}\n'
+            bridge.sys.stdin = types.SimpleNamespace(buffer=io.BytesIO(request))
+            output = io.BytesIO()
+            bridge.sys.stdout = types.SimpleNamespace(buffer=output)
+            message = bridge.read_message()
+            self.assertEqual(message["method"], "initialize")
+            self.assertEqual(bridge.STDIO_FRAMING, "newline")
+            bridge.write_message({"jsonrpc": "2.0", "id": 1, "result": {"ok": True}})
+            self.assertTrue(output.getvalue().endswith(b"\n"))
+            self.assertNotIn(b"Content-Length", output.getvalue())
+        finally:
+            bridge.sys.stdin = original_stdin
+            bridge.sys.stdout = original_stdout
+            bridge.STDIO_FRAMING = original_framing
 
 
 class BridgeHttpTests(unittest.TestCase):

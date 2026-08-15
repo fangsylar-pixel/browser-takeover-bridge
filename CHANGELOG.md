@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- Restore automatic stdio framing detection so MARVIS newline-delimited JSON and Content-Length MCP clients both initialize correctly.
 - Fail stalled extension commands deterministically, clear their pending state, and queue a rate-limited extension reload for recovery.
 - Arbitrate duplicate extension instances by browser/tab fingerprint, health, and capabilities so unhealthy copies are excluded from routing.
 - Increase claim leases to five minutes and renew them automatically throughout long workflows.

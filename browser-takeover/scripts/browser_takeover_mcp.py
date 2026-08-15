@@ -566,10 +566,26 @@ class ExtensionBridgeState:
 BRIDGE_STATE = ExtensionBridgeState()
 BRIDGE_SERVER = None
 MONITOR_STORE = MonitorStore()
+STDIO_FRAMING = "content-length"
 
 
 def read_message():
+    global STDIO_FRAMING
     headers = {}
+    first_line = sys.stdin.buffer.readline()
+    if not first_line:
+        return None
+
+    stripped = first_line.strip()
+    if stripped.startswith(b"{"):
+        STDIO_FRAMING = "newline"
+        return json.loads(stripped.decode("utf-8"))
+
+    line = first_line.decode("ascii", errors="replace").strip()
+    if ":" in line:
+        key, value = line.split(":", 1)
+        headers[key.lower()] = value.strip()
+
     while True:
         line = sys.stdin.buffer.readline()
         if not line:
@@ -589,8 +605,11 @@ def read_message():
 
 def write_message(message):
     body = json.dumps(message, separators=(",", ":"), ensure_ascii=False).encode("utf-8")
-    sys.stdout.buffer.write(f"Content-Length: {len(body)}\r\n\r\n".encode("ascii"))
-    sys.stdout.buffer.write(body)
+    if STDIO_FRAMING == "newline":
+        sys.stdout.buffer.write(body + b"\n")
+    else:
+        sys.stdout.buffer.write(f"Content-Length: {len(body)}\r\n\r\n".encode("ascii"))
+        sys.stdout.buffer.write(body)
     sys.stdout.buffer.flush()
 
 
