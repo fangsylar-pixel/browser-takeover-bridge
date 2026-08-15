@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+- Prefer the focused Chromium window when native input runs after SPA navigation or a dialog changes the page title, while retaining title and single-window fallbacks.
+- Add a bounded Windows system-input fallback for debugger and `Page.enable` dialog failures so modal alerts do not strand the extension command channel.
+- Record the previous MCP process state and last in-progress tool in a local runtime journal, making host-driven restarts distinguishable from clean exits and ordinary tool errors.
+- Accept structured action `type` as a compatibility alias for `fill`, including `text` to `value` normalization in direct actions and workflows.
 - Persist unexpired short-lived claims locally so MARVIS MCP process restarts do not invalidate active workflows, and wait briefly for the extension client to re-register.
 - Accept concise native input aliases (`click`, `wheel`, `drag`, `text`, `key`) alongside the canonical `native*` action names.
 - Add PATH, absolute Windows install paths, and registry App Paths fallbacks for Chrome/Edge discovery when MARVIS omits Program Files environment variables.

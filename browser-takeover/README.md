@@ -192,9 +192,19 @@ health reports `connected` from fresh tab sync plus active polling. `roundTrip` 
 means that a command result arrived within the last 30 seconds; `resultChannel: "idle"` is normal
 when the extension is connected but no recent command was executed.
 
+Diagnostics also exposes `server.previousSession` from a local runtime journal. A previous state of
+`in-progress` identifies the exact MCP method and tool that the host terminated; `completed` or
+`stopped` indicates the prior request completed or the server exited cleanly. Normal tool exceptions
+are caught by the MCP loop and recorded as `error`, so they do not terminate the process themselves.
+
 Native input accepts both concise names (`click`, `wheel`, `drag`, `text`, `key`) and canonical
 names (`nativeClick`, `nativeWheel`, `nativeDrag`, `nativeText`, `nativeKey`). The bridge normalizes
 aliases before dispatch, so MCP clients do not need to learn two incompatible action vocabularies.
+Window selection uses the focused Chromium window first when navigation or a modal has changed the
+page title, then falls back to title matching or an unambiguous single Chromium window.
+
+Structured actions accept `type: "type"` as an alias for `type: "fill"`. If `text` is supplied without
+`value`, the bridge maps it to `value`; this normalization also applies inside workflows.
 
 Browser launch discovery checks PATH, per-user installs, fixed Windows Program Files locations, and
 Windows App Paths registry entries. This keeps `browser_takeover_launch` working when an MCP host
@@ -203,8 +213,9 @@ such as MARVIS starts Python without `PROGRAMFILES` environment variables.
 `browser_takeover_extension_handle_dialog` waits briefly for
 `Page.javascriptDialogOpening`, retries handling a detected dialog up to three times, returns
 `DIALOG_NOT_FOUND` or `DIALOG_HANDLE_FAILED` instead of a bare timeout, and renews its claim after
-the operation. Use `waitTimeout` to control the evidence wait independently from the MCP command
-timeout.
+the operation. On Windows, debugger attach, `Page.enable`, or command-timeout failures use a bounded
+focused-window Enter/Escape fallback by default; set `systemFallback: false` to disable it. Use
+`waitTimeout` to control the evidence wait independently from the MCP command timeout.
 
 ## Two takeover modes
 

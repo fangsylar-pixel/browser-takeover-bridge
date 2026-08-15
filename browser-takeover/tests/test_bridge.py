@@ -314,6 +314,26 @@ class ToolCompatibilityTests(unittest.TestCase):
         for alias, canonical in expected.items():
             self.assertEqual(bridge.normalize_native_action({"type": alias})["type"], canonical)
 
+    def test_structured_type_alias_maps_to_fill(self):
+        self.assertEqual(
+            bridge.normalize_structured_action({"type": "type", "text": "hello"}),
+            {"type": "fill", "text": "hello", "value": "hello"},
+        )
+        self.assertEqual(
+            bridge.normalize_structured_action({"type": "type", "text": "ignored", "value": "explicit"})["value"],
+            "explicit",
+        )
+
+    def test_native_window_selection_prefers_focused_chromium_after_title_change(self):
+        selected = bridge.choose_browser_window(100, True, False, [], [(100, "New title"), (200, "Other")], True)
+        self.assertEqual(selected, 100)
+        selected = bridge.choose_browser_window(200, True, False, [(100, "Expected title")], [(100, "Expected title"), (200, "Other")], True)
+        self.assertEqual(selected, 100)
+
+    def test_dialog_fallback_only_handles_debugger_failures(self):
+        self.assertIn("Page.enable", bridge.dialog_system_fallback_reason({"ok": False, "error": "Page.enable timed out"}))
+        self.assertIsNone(bridge.dialog_system_fallback_reason({"ok": True, "result": {"ok": False, "code": "DIALOG_NOT_FOUND", "error": "No JavaScript dialog was detected"}}))
+
     def test_browser_discovery_uses_path_before_environment_candidates(self):
         with mock.patch.object(bridge.shutil, "which", return_value=str(MODULE_PATH)):
             self.assertEqual(bridge.find_browser_exe("chrome"), str(MODULE_PATH.resolve()))
