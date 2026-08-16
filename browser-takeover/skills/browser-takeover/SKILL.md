@@ -71,7 +71,8 @@ the MCP result wait automatically.
 
 For Jimeng image generation, avoid repeated screenshots and fixed sleeps. Fill
 `[data-generate-content-generator] [contenteditable="true"][role="textbox"]`, wait until
-`[data-generate-content-generator] button.lv-btn-primary` is `enabled`, click it, then wait for
+`[data-generate-content-generator] button.lv-btn-primary:not([class*="collapsed-submit-button"])`
+is `enabled`, click it, then wait for
 `[data-task-indicator="true"]` to become `visible` and finally `hidden` (typically with a 300000 ms
 timeout). Take one final snapshot after completion. Failure to observe the visible phase means the
 submission was not confirmed and should be diagnosed before retrying, especially because retries
