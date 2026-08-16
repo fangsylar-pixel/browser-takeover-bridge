@@ -70,6 +70,14 @@ def dialog_system_fallback_reason(response):
     return message if re.search(r"timed out|DIALOG_HANDLE_FAILED|debugger attach|Page\.enable", message, re.IGNORECASE) else None
 
 
+def action_result_timeout(action, requested=None, default=10):
+    timeout = float(default if requested is None else requested)
+    if (action or {}).get("type") == "wait":
+        action_seconds = max(0, float((action or {}).get("timeout", 10000))) / 1000
+        timeout = max(timeout, action_seconds + 5)
+    return max(0.1, min(timeout, 3600))
+
+
 def windows_system_input(action, viewport):
     if os.name != "nt":
         raise RuntimeError("System input is currently implemented on Windows only")
@@ -592,7 +600,7 @@ class ExtensionBridgeState:
         raise RuntimeError(f"Timed out waiting for browser event: {event_type or 'any'}")
 
     def wait_result(self, client_id, command_id, timeout=10):
-        timeout = max(0.1, min(float(timeout), 300))
+        timeout = max(0.1, min(float(timeout), 3600))
         deadline = time.time() + timeout
         while time.time() < deadline:
             with self.lock:
@@ -1259,7 +1267,7 @@ def check_monitor(args):
         response = BRIDGE_STATE.wait_result(
             claim["extensionClientId"],
             command_id,
-            float(args.get("timeout", 10)),
+            action_result_timeout(action, args.get("timeout"), 10),
         )
         action_result = response.get("result") or {}
         if not response.get("ok") or not action_result.get("ok"):
@@ -1517,10 +1525,15 @@ def handle_tool(name, args):
                     {"type": "action", "tabId": claim["tabId"], "action": action},
                 )
                 try:
+                    step_timeout = action_result_timeout(
+                        action,
+                        step.get("timeout", args.get("timeout")),
+                        15,
+                    )
                     response = BRIDGE_STATE.wait_result(
                         claim["extensionClientId"],
                         command_id,
-                        float(step.get("timeout", args.get("timeout", 15))),
+                        step_timeout,
                     )
                     ok = bool(response.get("ok") and (response.get("result") or {}).get("ok"))
                     step_result = {
@@ -2169,7 +2182,7 @@ TOOLS = [
                         "x": {"type": "number"},
                         "y": {"type": "number"},
                         "behavior": {"type": "string", "enum": ["instant", "smooth"]},
-                        "state": {"type": "string", "enum": ["visible", "hidden", "attached"]},
+                        "state": {"type": "string", "enum": ["visible", "hidden", "attached", "detached", "enabled", "disabled"]},
                         "timeout": {"type": "number"},
                         "frameId": {"type": "integer"},
                         "frameScope": {"type": "string", "enum": ["top", "all"]},

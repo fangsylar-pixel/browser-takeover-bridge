@@ -65,6 +65,17 @@ for advanced compatibility cases. For write actions, include an `expect` block w
 the result is verified by URL, text, element visibility, or final value evidence.
 The compatibility action `type: "type"` is normalized to `fill`; `text` becomes `value` when no
 explicit value is present. This works for both direct actions and workflow steps.
+For `wait`, use `hidden` for CSS-hidden or absent elements, `detached` only when removal from the DOM
+is required, and `enabled`/`disabled` for controls. Long `action.timeout` values are propagated to
+the MCP result wait automatically.
+
+For Jimeng image generation, avoid repeated screenshots and fixed sleeps. Fill
+`[data-generate-content-generator] [contenteditable="true"][role="textbox"]`, wait until
+`[data-generate-content-generator] button.lv-btn-primary` is `enabled`, click it, then wait for
+`[data-task-indicator="true"]` to become `visible` and finally `hidden` (typically with a 300000 ms
+timeout). Take one final snapshot after completion. Failure to observe the visible phase means the
+submission was not confirmed and should be diagnosed before retrying, especially because retries
+may consume credits.
 
 For SPA navigation, pass `urlPattern`, `selector`, or `text` to
 `browser_takeover_extension_navigate` whenever a reliable readiness signal is known. Treat

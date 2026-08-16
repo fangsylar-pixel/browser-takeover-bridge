@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Make `wait` treat CSS-invisible elements as hidden, add detached/enabled/disabled states, and automatically propagate long action timeouts through direct actions and workflows.
+- Document an event-driven Jimeng AI generation workflow using its stable task indicator instead of repeated screenshots and fixed sleeps.
 - Prefer the focused Chromium window when native input runs after SPA navigation or a dialog changes the page title, while retaining title and single-window fallbacks.
 - Add a bounded Windows system-input fallback for debugger and `Page.enable` dialog failures so modal alerts do not strand the extension command channel.
 - Record the previous MCP process state and last in-progress tool in a local runtime journal, making host-driven restarts distinguishable from clean exits and ordinary tool errors.

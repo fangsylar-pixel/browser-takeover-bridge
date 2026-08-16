@@ -206,6 +206,28 @@ page title, then falls back to title matching or an unambiguous single Chromium 
 Structured actions accept `type: "type"` as an alias for `type: "fill"`. If `text` is supplied without
 `value`, the bridge maps it to `value`; this normalization also applies inside workflows.
 
+`wait` distinguishes CSS visibility from DOM attachment. `hidden` succeeds when a matching element
+is absent or visually hidden, while `detached` requires removal from the DOM. `enabled` and
+`disabled` are available for submit controls. A long wait's millisecond `action.timeout` is
+automatically reflected in the MCP result timeout, including inside workflows, so the outer request
+does not expire at the old 10/15-second default.
+
+### Jimeng AI image generation
+
+Jimeng keeps its task indicator mounted and toggles visibility with CSS. For
+`jimeng.jianying.com/ai-tool/generate`, use the stable selectors below instead of repeated full-page
+snapshots or fixed sleeps:
+
+1. Fill `[data-generate-content-generator] [contenteditable="true"][role="textbox"]`.
+2. Wait for `[data-generate-content-generator] button.lv-btn-primary` with state `enabled`, then click it.
+3. Wait for `[data-task-indicator="true"]` with state `visible` to confirm task submission.
+4. Wait for the same selector with state `hidden` and an action timeout such as `300000` to detect completion.
+5. Take one final snapshot or read the newest generated record. If the task indicator never becomes
+   visible, inspect the submit button and page error text rather than assuming generation started.
+
+This flow reacts as soon as the page changes, avoids unnecessary screenshots, and prevents a
+long-running generation from being mistaken for a frozen MCP call.
+
 Browser launch discovery checks PATH, per-user installs, fixed Windows Program Files locations, and
 Windows App Paths registry entries. This keeps `browser_takeover_launch` working when an MCP host
 such as MARVIS starts Python without `PROGRAMFILES` environment variables.

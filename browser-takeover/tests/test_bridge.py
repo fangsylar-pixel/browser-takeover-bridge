@@ -324,6 +324,18 @@ class ToolCompatibilityTests(unittest.TestCase):
             "explicit",
         )
 
+    def test_wait_timeout_tracks_long_action_timeout(self):
+        self.assertEqual(bridge.action_result_timeout({"type": "wait", "timeout": 180000}, None, 15), 185)
+        self.assertEqual(bridge.action_result_timeout({"type": "click"}, None, 15), 15)
+
+    def test_wait_states_cover_css_visibility_and_control_readiness(self):
+        background = (Path(__file__).parents[1] / "extension" / "background.js").read_text(encoding="utf-8")
+        self.assertIn('state === "hidden" ? !element || !isVisible', background)
+        self.assertIn('state === "enabled" ? Boolean(element && isVisible && !isDisabled)', background)
+        action_tool = next(tool for tool in bridge.TOOLS if tool["name"] == "browser_takeover_extension_action")
+        states = action_tool["inputSchema"]["properties"]["action"]["properties"]["state"]["enum"]
+        self.assertEqual(states, ["visible", "hidden", "attached", "detached", "enabled", "disabled"])
+
     def test_native_window_selection_prefers_focused_chromium_after_title_change(self):
         selected = bridge.choose_browser_window(100, True, False, [], [(100, "New title"), (200, "Other")], True)
         self.assertEqual(selected, 100)
