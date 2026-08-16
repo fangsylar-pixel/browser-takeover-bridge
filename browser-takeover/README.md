@@ -219,7 +219,9 @@ Jimeng keeps its task indicator mounted and toggles visibility with CSS. For
 snapshots or fixed sleeps:
 
 1. Fill `[data-generate-content-generator] [contenteditable="true"][role="textbox"]`.
-2. Wait for `[data-generate-content-generator] button.lv-btn-primary` with state `enabled`, then click it.
+2. Wait for `[data-generate-content-generator] button.lv-btn-primary:not([class*="collapsed-submit-button"])`
+   with state `enabled`, then click it. Jimeng keeps a second hidden collapsed submit button in the
+   DOM, so targeting every primary button can wait on the wrong control.
 3. Wait for `[data-task-indicator="true"]` with state `visible` to confirm task submission.
 4. Wait for the same selector with state `hidden` and an action timeout such as `300000` to detect completion.
 5. Take one final snapshot or read the newest generated record. If the task indicator never becomes
