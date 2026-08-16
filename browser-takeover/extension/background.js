@@ -545,16 +545,23 @@ async function performAction(command) {
         while (performance.now() <= deadline) {
           matches = resolveMatches();
           element = matches[index];
+          const isVisible = Boolean(element && visible(element));
+          const isDisabled = Boolean(element && (element.disabled || element.getAttribute("aria-disabled") === "true"));
           const satisfied =
-            state === "hidden" ? !element :
+            state === "hidden" ? !element || !isVisible :
+            state === "detached" ? !element :
             state === "attached" ? Boolean(element) :
-            Boolean(element && visible(element));
+            state === "enabled" ? Boolean(element && isVisible && !isDisabled) :
+            state === "disabled" ? Boolean(element && isDisabled) :
+            isVisible;
           if (satisfied) {
             return {
               ok: true,
               type: request.type,
               state,
               matchCount: matches.length,
+              visible: isVisible,
+              disabled: element ? isDisabled : null,
               durationMs: Math.round(performance.now() - startedAt),
               title: document.title,
               href: location.href,
@@ -562,7 +569,13 @@ async function performAction(command) {
           }
           await new Promise((resolve) => setTimeout(resolve, 100));
         }
-        return { ok: false, error: `wait timed out for state: ${state}`, matchCount: matches.length };
+        return {
+          ok: false,
+          error: `wait timed out for state: ${state}`,
+          state,
+          matchCount: matches.length,
+          visible: Boolean(element && visible(element)),
+        };
       }
       if (!element && request.type !== "snapshot" && !(request.type === "scroll" && !request.target)) {
         return { ok: false, error: "target not found", matchCount: matches.length };
